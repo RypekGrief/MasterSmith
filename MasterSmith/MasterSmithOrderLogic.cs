@@ -274,7 +274,7 @@ namespace MasterSmith
                 GeneratePricesForTown(town);
             }
 
-            if (MasterSmithData.CurrentPrices.TryGetValue(settlementId, out int[] prices))
+            if (MasterSmithData.CurrentPrices.TryGetValue(settlementId, out List<int> prices))
             {
                 bool isWeapon = IsWeapon(selectedItem.Item);
                 int qualityIndex;
@@ -329,18 +329,18 @@ namespace MasterSmith
 
         /// <summary>
         /// Şehir için MCM aralıklarından rastgele haftalık fiyatları oluşturur.
-        /// Fiyat dizisi: [FineWeapon, FineArmor, MasterworkWeapon, MasterworkArmor, LegendaryWeapon, LegendaryArmor]
+        /// Fiyat listesi: [FineWeapon, FineArmor, MasterworkWeapon, MasterworkArmor, LegendaryWeapon, LegendaryArmor]
         /// </summary>
         private static void GeneratePricesForTown(Town town)
         {
             var settings = MasterSmithSettings.Instance;
-            int[] combined = new int[6];
-            combined[0] = MBRandom.RandomInt((int)settings.FineWeaponMinPrice, (int)settings.FineWeaponMaxPrice + 1);
-            combined[1] = MBRandom.RandomInt((int)settings.FineArmorMinPrice, (int)settings.FineArmorMaxPrice + 1);
-            combined[2] = MBRandom.RandomInt((int)settings.MasterworkWeaponMinPrice, (int)settings.MasterworkWeaponMaxPrice + 1);
-            combined[3] = MBRandom.RandomInt((int)settings.MasterworkArmorMinPrice, (int)settings.MasterworkArmorMaxPrice + 1);
-            combined[4] = MBRandom.RandomInt((int)settings.LegendaryWeaponMinPrice, (int)settings.LegendaryWeaponMaxPrice + 1);
-            combined[5] = MBRandom.RandomInt((int)settings.LegendaryArmorMinPrice, (int)settings.LegendaryArmorMaxPrice + 1);
+            var combined = new List<int>(6);
+            combined.Add(MBRandom.RandomInt((int)settings.FineWeaponMinPrice, (int)settings.FineWeaponMaxPrice + 1));
+            combined.Add(MBRandom.RandomInt((int)settings.FineArmorMinPrice, (int)settings.FineArmorMaxPrice + 1));
+            combined.Add(MBRandom.RandomInt((int)settings.MasterworkWeaponMinPrice, (int)settings.MasterworkWeaponMaxPrice + 1));
+            combined.Add(MBRandom.RandomInt((int)settings.MasterworkArmorMinPrice, (int)settings.MasterworkArmorMaxPrice + 1));
+            combined.Add(MBRandom.RandomInt((int)settings.LegendaryWeaponMinPrice, (int)settings.LegendaryWeaponMaxPrice + 1));
+            combined.Add(MBRandom.RandomInt((int)settings.LegendaryArmorMinPrice, (int)settings.LegendaryArmorMaxPrice + 1));
             MasterSmithData.CurrentPrices[town.Settlement.StringId] = combined;
         }
 
@@ -374,16 +374,7 @@ namespace MasterSmith
             GiveGoldAction.ApplyBetweenCharacters(Hero.MainHero, null, price, false);
             MobileParty.MainParty.ItemRoster.AddToCounts(selectedItem, -1);
 
-            var order = new SmithingOrder
-            {
-                OrderId = Guid.NewGuid().ToString(),
-                Town = town,
-                OriginalItem = selectedItem,
-                RequestedQuality = selectedQuality,
-                Price = price,
-                DaysRemaining = days,
-                IsReady = false
-            };
+            var order = SmithingOrder.Create(town, selectedItem, selectedQuality, price, days);
             MasterSmithData.ActiveOrders.Add(order);
 
             InformationManager.DisplayMessage(new InformationMessage(

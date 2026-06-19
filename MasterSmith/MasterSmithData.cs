@@ -39,7 +39,7 @@ namespace MasterSmith
         /// <summary>
         /// Her şehrin haftalık güncel fiyatları.
         /// Key: Settlement StringId
-        /// Value: 6 elemanlı int dizisi
+        /// Value: 6 elemanlı int listesi
         ///   [0] = Fine Weapon, [1] = Fine Armor
         ///   [2] = Masterwork Weapon, [3] = Masterwork Armor
         ///   [4] = Legendary Weapon, [5] = Legendary Armor
@@ -47,7 +47,7 @@ namespace MasterSmith
         /// Haftalık tick'te MCM aralıklarından rastgele yenilenir.
         /// Kayıt dosyasına yazılır.
         /// </summary>
-        public static Dictionary<string, int[]> CurrentPrices = new Dictionary<string, int[]>();
+        public static Dictionary<string, List<int>> CurrentPrices = new Dictionary<string, List<int>>();
 
         /// <summary>
         /// Tüm aktif ve teslim edilmemiş siparişlerin listesi.
@@ -95,18 +95,21 @@ namespace MasterSmith
 
     /// <summary>
     /// Tek bir uzman demirci siparişini temsil eder.
-    /// Kayıt dosyasına yazılıp okunabilmesi için public property'ler kullanır.
+    /// Kayıt dosyasına yazılabilmesi için sadece serileştirilebilir alanlar içerir.
     /// </summary>
     public class SmithingOrder
     {
         /// <summary>Benzersiz sipariş kimliği (Guid).</summary>
         public string OrderId { get; set; }
 
-        /// <summary>Siparişin verildiği şehir.</summary>
-        public Town Town { get; set; }
+        /// <summary>Siparişin verildiği şehrin Settlement StringId'si.</summary>
+        public string TownId { get; set; }
 
-        /// <summary>Yükseltilecek orijinal eşya (Item + mevcut ItemModifier).</summary>
-        public EquipmentElement OriginalItem { get; set; }
+        /// <summary>Yükseltilecek eşyanın Item StringId'si.</summary>
+        public string ItemId { get; set; }
+
+        /// <summary>Yükseltilecek eşyanın mevcut ItemModifier StringId'si (yoksa null).</summary>
+        public string CurrentModifierId { get; set; }
 
         /// <summary>İstenen hedef kalite (Fine, Masterwork, Legendary).</summary>
         public ItemQuality RequestedQuality { get; set; }
@@ -119,5 +122,47 @@ namespace MasterSmith
 
         /// <summary>Sipariş teslime hazır mı?</summary>
         public bool IsReady { get; set; }
+
+        /// <summary>
+        /// StringId'lerden Town referansını çözer.
+        /// </summary>
+        public Town GetTown()
+        {
+            Settlement settlement = Settlement.Find(this.TownId);
+            return settlement?.Town;
+        }
+
+        /// <summary>
+        /// StringId'lerden orijinal EquipmentElement'i oluşturur.
+        /// </summary>
+        public EquipmentElement GetOriginalItem()
+        {
+            ItemObject item = MBObjectManager.Instance.GetObject<ItemObject>(this.ItemId);
+            if (item == null) return EquipmentElement.Invalid;
+
+            ItemModifier modifier = null;
+            if (!string.IsNullOrEmpty(this.CurrentModifierId))
+                modifier = MBObjectManager.Instance.GetObject<ItemModifier>(this.CurrentModifierId);
+
+            return new EquipmentElement(item, modifier, null, false);
+        }
+
+        /// <summary>
+        /// Verilen EquipmentElement ve Town'dan siparişi oluşturan yardımcı metot.
+        /// </summary>
+        public static SmithingOrder Create(Town town, EquipmentElement item, ItemQuality quality, int price, int days)
+        {
+            return new SmithingOrder
+            {
+                OrderId = System.Guid.NewGuid().ToString(),
+                TownId = town.Settlement.StringId,
+                ItemId = item.Item.StringId,
+                CurrentModifierId = item.ItemModifier?.StringId,
+                RequestedQuality = quality,
+                Price = price,
+                DaysRemaining = days,
+                IsReady = false
+            };
+        }
     }
 }
