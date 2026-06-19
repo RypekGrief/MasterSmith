@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System.Collections.Generic;
+using System.Linq;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Settlements;
@@ -47,7 +48,7 @@ namespace MasterSmith
             if (!settlement.IsTown && !settlement.IsFortification) return;
 
             var readyOrders = MasterSmithData.ActiveOrders
-                .Where(o => o.IsReady && o.Town.Settlement == settlement)
+                .Where(o => o.IsReady && o.GetTown()?.Settlement == settlement)
                 .ToList();
 
             foreach (var order in readyOrders)
@@ -66,13 +67,13 @@ namespace MasterSmith
                 if (town == null) continue;
 
                 var settings = MasterSmithSettings.Instance;
-                int[] combined = new int[6];
-                combined[0] = MBRandom.RandomInt((int)settings.FineWeaponMinPrice, (int)settings.FineWeaponMaxPrice + 1);
-                combined[1] = MBRandom.RandomInt((int)settings.FineArmorMinPrice, (int)settings.FineArmorMaxPrice + 1);
-                combined[2] = MBRandom.RandomInt((int)settings.MasterworkWeaponMinPrice, (int)settings.MasterworkWeaponMaxPrice + 1);
-                combined[3] = MBRandom.RandomInt((int)settings.MasterworkArmorMinPrice, (int)settings.MasterworkArmorMaxPrice + 1);
-                combined[4] = MBRandom.RandomInt((int)settings.LegendaryWeaponMinPrice, (int)settings.LegendaryWeaponMaxPrice + 1);
-                combined[5] = MBRandom.RandomInt((int)settings.LegendaryArmorMinPrice, (int)settings.LegendaryArmorMaxPrice + 1);
+                var combined = new List<int>(6);
+                combined.Add(MBRandom.RandomInt((int)settings.FineWeaponMinPrice, (int)settings.FineWeaponMaxPrice + 1));
+                combined.Add(MBRandom.RandomInt((int)settings.FineArmorMinPrice, (int)settings.FineArmorMaxPrice + 1));
+                combined.Add(MBRandom.RandomInt((int)settings.MasterworkWeaponMinPrice, (int)settings.MasterworkWeaponMaxPrice + 1));
+                combined.Add(MBRandom.RandomInt((int)settings.MasterworkArmorMinPrice, (int)settings.MasterworkArmorMaxPrice + 1));
+                combined.Add(MBRandom.RandomInt((int)settings.LegendaryWeaponMinPrice, (int)settings.LegendaryWeaponMaxPrice + 1));
+                combined.Add(MBRandom.RandomInt((int)settings.LegendaryArmorMinPrice, (int)settings.LegendaryArmorMaxPrice + 1));
                 MasterSmithData.CurrentPrices[settlementId] = combined;
             }
         }
@@ -103,16 +104,18 @@ namespace MasterSmith
         /// </summary>
         private void NotifyOrderReady(SmithingOrder order)
         {
-            if (Hero.MainHero.CurrentSettlement == order.Town.Settlement)
+            Town town = order.GetTown();
+            if (town != null && Hero.MainHero.CurrentSettlement == town.Settlement)
             {
                 DeliverOrder(order);
             }
-            else
+            else if (town != null)
             {
+                EquipmentElement originalItem = order.GetOriginalItem();
                 TextObject msg = new TextObject("{=MS_READY}{QUALITY} {ITEM} ekipmanınız {TOWN} Uzman Demircisinde hazır!", null);
                 msg.SetTextVariable("QUALITY", order.RequestedQuality.ToString());
-                msg.SetTextVariable("ITEM", order.OriginalItem.Item.Name.ToString());
-                msg.SetTextVariable("TOWN", order.Town.Name.ToString());
+                msg.SetTextVariable("ITEM", originalItem.Item.Name.ToString());
+                msg.SetTextVariable("TOWN", town.Name.ToString());
                 InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0x00FF00)));
             }
         }
@@ -123,14 +126,15 @@ namespace MasterSmith
         /// </summary>
         private void DeliverOrder(SmithingOrder order)
         {
-            ItemModifier modifier = MasterSmithOrderLogic.GetItemModifierForQuality(order.OriginalItem.Item, order.RequestedQuality);
+            EquipmentElement originalItem = order.GetOriginalItem();
+            ItemModifier modifier = MasterSmithOrderLogic.GetItemModifierForQuality(originalItem.Item, order.RequestedQuality);
             if (modifier != null)
             {
-                EquipmentElement upgradedElement = new EquipmentElement(order.OriginalItem.Item, modifier, null, false);
+                EquipmentElement upgradedElement = new EquipmentElement(originalItem.Item, modifier, null, false);
                 MobileParty.MainParty.ItemRoster.AddToCounts(upgradedElement, 1);
 
                 string modifierName = modifier.Name.ToString();
-                string itemName = order.OriginalItem.Item.Name.ToString();
+                string itemName = originalItem.Item.Name.ToString();
                 TextObject msg = new TextObject("{=MS_DELIVERED}{MODIFIER} {ITEM} envanterinize teslim edildi", null);
                 msg.SetTextVariable("MODIFIER", modifierName);
                 msg.SetTextVariable("ITEM", itemName);
@@ -138,7 +142,7 @@ namespace MasterSmith
             }
             else
             {
-                MobileParty.MainParty.ItemRoster.AddToCounts(order.OriginalItem, 1);
+                MobileParty.MainParty.ItemRoster.AddToCounts(originalItem, 1);
                 InformationManager.DisplayMessage(new InformationMessage(
                     "[MasterSmith] Could not apply quality modifier. Original item returned.",
                     Color.FromUint(0xFFFF0000)));
