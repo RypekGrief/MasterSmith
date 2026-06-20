@@ -31,7 +31,12 @@
 
 		<!-- Price confirmation menu -->
 		<string id="MS_CONFIRM_ORDER_TITLE" text="Confirm Order" />
-		<string id="MS_CONFIRM_ORDER_DESC" text="Item: {ITEM_NAME}\nQuality: {QUALITY}\nTime: {DAYS} days\nPrice: {PRICE} denars\n\nPlace this order?" />
+		<string id="MS_CONFIRM_ORDER_DESC" text="Item: {ITEM_NAME}
+Quality: {QUALITY}
+Time: {DAYS} days
+Price: {PRICE} denars
+
+Place this order?" />
 		<string id="MS_CONFIRM" text="Confirm" />
 		<string id="MS_PLACE_ORDER" text="Place Order" />
 		<string id="MS_NOT_ENOUGH_GOLD" text="Not enough gold! (Need {PRICE}, have {GOLD})" />
