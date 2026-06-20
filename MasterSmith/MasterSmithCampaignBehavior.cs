@@ -16,6 +16,7 @@ namespace MasterSmith
     /// Daily: Decrements remaining days on active orders, marks expired ones as ready.
     /// SettlementEntered: Auto-delivers ready orders when the player enters the city.
     /// OnGameLoaded: Shows usage hint message when a game is loaded.
+    /// OnNewGameCreated: Clears all data for a fresh start.
     /// </summary>
     public class MasterSmithCampaignBehavior : CampaignBehaviorBase
     {
@@ -25,6 +26,17 @@ namespace MasterSmith
             CampaignEvents.DailyTickEvent.AddNonSerializedListener(this, OnDailyTick);
             CampaignEvents.SettlementEntered.AddNonSerializedListener(this, OnSettlementEntered);
             CampaignEvents.OnGameLoadedEvent.AddNonSerializedListener(this, OnGameLoaded);
+            CampaignEvents.OnNewGameCreatedEvent.AddNonSerializedListener(this, OnNewGameCreated);
+        }
+
+        /// <summary>
+        /// Clears all static data when a new game is created.
+        /// Prevents carryover from previous characters.
+        /// </summary>
+        private void OnNewGameCreated(CampaignGameStarter campaignGameStarter)
+        {
+            MasterSmithData.CurrentPrices = new Dictionary<string, string>();
+            MasterSmithData.ActiveOrders = new List<string>();
         }
 
         /// <summary>
@@ -81,27 +93,39 @@ namespace MasterSmith
         /// <summary>
         /// Daily tick: Decrements remaining days on all active orders by 1.
         /// Marks orders as ready when DaysRemaining reaches 0.
-        /// Writes changes back as CSV strings.
+        /// If an order is delivered (player in town), it is removed from the list and NOT updated.
+        /// If an order is not delivered (player away), its CSV string is updated in place.
         /// </summary>
         private void OnDailyTick()
         {
+            // Only process orders that are not yet ready
             var orders = MasterSmithData.ActiveOrders
                 .Select(csv => SmithingOrder.FromCsv(csv))
-                .Where(o => o != null)
+                .Where(o => o != null && !o.IsReady)
                 .ToList();
 
             for (int i = 0; i < orders.Count; i++)
             {
                 var order = orders[i];
-                if (!order.IsReady)
+                order.DaysRemaining -= 1;
+                if (order.DaysRemaining <= 0)
                 {
-                    order.DaysRemaining -= 1;
-                    if (order.DaysRemaining <= 0)
+                    order.IsReady = true;
+                    bool delivered = NotifyOrderReady(order);
+                    if (!delivered)
                     {
-                        order.IsReady = true;
-                        NotifyOrderReady(order);
+                        // Order was not delivered, update CSV in ActiveOrders
+                        int index = MasterSmithData.ActiveOrders.FindIndex(csv => csv.StartsWith(order.OrderId + "|"));
+                        if (index >= 0)
+                            MasterSmithData.ActiveOrders[index] = order.ToCsv();
                     }
-                    MasterSmithData.ActiveOrders[i] = order.ToCsv();
+                }
+                else
+                {
+                    // Still in progress, update CSV
+                    int index = MasterSmithData.ActiveOrders.FindIndex(csv => csv.StartsWith(order.OrderId + "|"));
+                    if (index >= 0)
+                        MasterSmithData.ActiveOrders[index] = order.ToCsv();
                 }
             }
         }
@@ -109,13 +133,15 @@ namespace MasterSmith
         /// <summary>
         /// Sends a notification when an order is ready.
         /// If the player is currently in the city, delivers immediately.
+        /// Returns true if delivered, false otherwise.
         /// </summary>
-        private void NotifyOrderReady(SmithingOrder order)
+        private bool NotifyOrderReady(SmithingOrder order)
         {
             Town town = order.GetTown();
             if (town != null && Hero.MainHero.CurrentSettlement == town.Settlement)
             {
                 DeliverOrder(order);
+                return true;
             }
             else if (town != null)
             {
@@ -125,7 +151,9 @@ namespace MasterSmith
                 msg.SetTextVariable("ITEM", originalItem.Item.Name.ToString());
                 msg.SetTextVariable("TOWN", town.Name.ToString());
                 InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0x00FF00)));
+                return false;
             }
+            return false;
         }
 
         /// <summary>
@@ -161,11 +189,22 @@ namespace MasterSmith
         /// <summary>
         /// Writes/reads prices and active orders to/from the save file.
         /// Both are string-based collections, ensuring problem-free serialization.
+        /// Null checks prevent crashes when loading saves without the mod.
         /// </summary>
         public override void SyncData(IDataStore dataStore)
         {
+            if (MasterSmithData.CurrentPrices == null)
+                MasterSmithData.CurrentPrices = new Dictionary<string, string>();
+            if (MasterSmithData.ActiveOrders == null)
+                MasterSmithData.ActiveOrders = new List<string>();
+
             dataStore.SyncData("MS_Prices", ref MasterSmithData.CurrentPrices);
             dataStore.SyncData("MS_Orders", ref MasterSmithData.ActiveOrders);
+
+            if (MasterSmithData.CurrentPrices == null)
+                MasterSmithData.CurrentPrices = new Dictionary<string, string>();
+            if (MasterSmithData.ActiveOrders == null)
+                MasterSmithData.ActiveOrders = new List<string>();
         }
     }
 }
