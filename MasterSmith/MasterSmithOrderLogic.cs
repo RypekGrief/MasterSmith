@@ -7,6 +7,7 @@ using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
 using TaleWorlds.Library;
+using TaleWorlds.Localization;
 using TaleWorlds.ObjectSystem;
 
 namespace MasterSmith
@@ -53,9 +54,8 @@ namespace MasterSmith
             var playerItems = GetEligibleItemsForSmithing();
             if (playerItems.Count == 0)
             {
-                InformationManager.DisplayMessage(new InformationMessage(
-                    "[MasterSmith] You don't have any upgradable items in your inventory.",
-                    Color.FromUint(0xFFFF0000)));
+                TextObject msg = new TextObject("{=MS_NO_ITEMS}[MasterSmith] You don't have any upgradable items in your inventory.", null);
+                InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFFFF0000)));
                 return;
             }
             ShowItemSelection(town, playerItems);
@@ -100,14 +100,14 @@ namespace MasterSmith
 
             MBInformationManager.ShowMultiSelectionInquiry(
                 new MultiSelectionInquiryData(
-                    titleText: "Select Item to Upgrade",
-                    descriptionText: "Choose which item you'd like the master smith to work on.",
+                    titleText: new TextObject("{=MS_SELECT_ITEM_TITLE}Select Item to Upgrade", null).ToString(),
+                    descriptionText: new TextObject("{=MS_SELECT_ITEM_DESC}Choose which item you'd like the master smith to work on.", null).ToString(),
                     inquiryElements: inquiryElements,
                     isExitShown: true,
                     minSelectableOptionCount: 1,
                     maxSelectableOptionCount: 1,
-                    affirmativeText: "Next",
-                    negativeText: "Cancel",
+                    affirmativeText: new TextObject("{=MS_NEXT}Next", null).ToString(),
+                    negativeText: new TextObject("{=MS_CANCEL}Cancel", null).ToString(),
                     affirmativeAction: (selectedElements) =>
                     {
                         if (selectedElements.Count > 0)
@@ -131,12 +131,10 @@ namespace MasterSmith
             var settings = MasterSmithSettings.Instance;
             var inquiryElements = new List<InquiryElement>();
 
-            // Check for compatible modifiers for each quality
             bool canBeFine = GetItemModifierForQuality(selectedItem.Item, ItemQuality.Fine) != null;
             bool canBeMasterwork = GetItemModifierForQuality(selectedItem.Item, ItemQuality.Masterwork) != null;
             bool canBeLegendary = GetItemModifierForQuality(selectedItem.Item, ItemQuality.Legendary) != null;
 
-            // Culture restriction: Legendary only at a smith of the same culture
             if (canBeLegendary)
             {
                 CultureObject smithCulture = MasterSmithData.GetSmithCulture(town);
@@ -146,30 +144,41 @@ namespace MasterSmith
             }
 
             if (canBeFine)
-                inquiryElements.Add(new InquiryElement(ItemQuality.Fine, $"Fine ({(int)settings.FineCraftingDays} days)", null));
+            {
+                TextObject fineText = new TextObject("{=MS_QUALITY_FINE}Fine ({DAYS} days)", null);
+                fineText.SetTextVariable("DAYS", (int)settings.FineCraftingDays);
+                inquiryElements.Add(new InquiryElement(ItemQuality.Fine, fineText.ToString(), null));
+            }
             if (canBeMasterwork)
-                inquiryElements.Add(new InquiryElement(ItemQuality.Masterwork, $"Masterwork ({(int)settings.MasterworkCraftingDays} days)", null));
+            {
+                TextObject mwText = new TextObject("{=MS_QUALITY_MASTERWORK}Masterwork ({DAYS} days)", null);
+                mwText.SetTextVariable("DAYS", (int)settings.MasterworkCraftingDays);
+                inquiryElements.Add(new InquiryElement(ItemQuality.Masterwork, mwText.ToString(), null));
+            }
             if (canBeLegendary)
-                inquiryElements.Add(new InquiryElement(ItemQuality.Legendary, $"Legendary ({(int)settings.LegendaryCraftingDays} days)", null));
+            {
+                TextObject legText = new TextObject("{=MS_QUALITY_LEGENDARY}Legendary ({DAYS} days)", null);
+                legText.SetTextVariable("DAYS", (int)settings.LegendaryCraftingDays);
+                inquiryElements.Add(new InquiryElement(ItemQuality.Legendary, legText.ToString(), null));
+            }
 
             if (inquiryElements.Count == 0)
             {
-                InformationManager.DisplayMessage(new InformationMessage(
-                    "[MasterSmith] No quality upgrades available for this item.",
-                    Color.FromUint(0xFFFF0000)));
+                TextObject msg = new TextObject("{=MS_NO_QUALITY}[MasterSmith] No quality upgrades available for this item.", null);
+                InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFFFF0000)));
                 return;
             }
 
             MBInformationManager.ShowMultiSelectionInquiry(
                 new MultiSelectionInquiryData(
-                    titleText: "Select Quality",
-                    descriptionText: "Choose the desired quality level.",
+                    titleText: new TextObject("{=MS_SELECT_QUALITY_TITLE}Select Quality", null).ToString(),
+                    descriptionText: new TextObject("{=MS_SELECT_QUALITY_DESC}Choose the desired quality level.", null).ToString(),
                     inquiryElements: inquiryElements,
                     isExitShown: true,
                     minSelectableOptionCount: 1,
                     maxSelectableOptionCount: 1,
-                    affirmativeText: "Calculate Price",
-                    negativeText: "Back",
+                    affirmativeText: new TextObject("{=MS_CALCULATE_PRICE}Calculate Price", null).ToString(),
+                    negativeText: new TextObject("{=MS_BACK}Back", null).ToString(),
                     affirmativeAction: (selectedQualities) =>
                     {
                         if (selectedQualities.Count > 0)
@@ -191,26 +200,37 @@ namespace MasterSmith
             int price = CalculatePrice(town, selectedItem, selectedQuality);
             int days = GetCraftingDays(selectedQuality);
 
-            string message = $"Item: {selectedItem.Item.Name}\nQuality: {selectedQuality}\nTime: {days} days\nPrice: {price} denars\n\nPlace this order?";
+            TextObject descText = new TextObject("{=MS_CONFIRM_ORDER_DESC}Item: {ITEM_NAME}\nQuality: {QUALITY}\nTime: {DAYS} days\nPrice: {PRICE} denars\n\nPlace this order?", null);
+            descText.SetTextVariable("ITEM_NAME", selectedItem.Item.Name.ToString());
+            descText.SetTextVariable("QUALITY", selectedQuality.ToString());
+            descText.SetTextVariable("DAYS", days);
+            descText.SetTextVariable("PRICE", price);
+            string message = descText.ToString();
+
             bool canAfford = Hero.MainHero.Gold >= price;
 
             var inquiryElements = new List<InquiryElement>();
             if (canAfford)
-                inquiryElements.Add(new InquiryElement(true, "Place Order", null));
+                inquiryElements.Add(new InquiryElement(true, new TextObject("{=MS_PLACE_ORDER}Place Order", null).ToString(), null));
             else
-                inquiryElements.Add(new InquiryElement(false, $"Not enough gold! (Need {price}, have {Hero.MainHero.Gold})", null));
-            inquiryElements.Add(new InquiryElement(false, "Cancel", null));
+            {
+                TextObject poorText = new TextObject("{=MS_NOT_ENOUGH_GOLD}Not enough gold! (Need {PRICE}, have {GOLD})", null);
+                poorText.SetTextVariable("PRICE", price);
+                poorText.SetTextVariable("GOLD", Hero.MainHero.Gold);
+                inquiryElements.Add(new InquiryElement(false, poorText.ToString(), null));
+            }
+            inquiryElements.Add(new InquiryElement(false, new TextObject("{=MS_CANCEL}Cancel", null).ToString(), null));
 
             MBInformationManager.ShowMultiSelectionInquiry(
                 new MultiSelectionInquiryData(
-                    titleText: "Confirm Order",
+                    titleText: new TextObject("{=MS_CONFIRM_ORDER_TITLE}Confirm Order", null).ToString(),
                     descriptionText: message,
                     inquiryElements: inquiryElements,
                     isExitShown: true,
                     minSelectableOptionCount: 1,
                     maxSelectableOptionCount: 1,
-                    affirmativeText: "Confirm",
-                    negativeText: "Back",
+                    affirmativeText: new TextObject("{=MS_CONFIRM}Confirm", null).ToString(),
+                    negativeText: new TextObject("{=MS_BACK}Back", null).ToString(),
                     affirmativeAction: (selectedOptions) =>
                     {
                         if (selectedOptions.Count > 0 && (bool)selectedOptions[0].Identifier)
@@ -222,9 +242,6 @@ namespace MasterSmith
                 ));
         }
 
-        /// <summary>
-        /// Returns the crafting time in days for the given quality from MCM settings.
-        /// </summary>
         private static int GetCraftingDays(ItemQuality quality)
         {
             var settings = MasterSmithSettings.Instance;
@@ -237,9 +254,6 @@ namespace MasterSmith
             }
         }
 
-        /// <summary>
-        /// Checks if an item is a weapon type (includes shields, bows, arrows, throwing, etc.).
-        /// </summary>
         private static bool IsWeapon(ItemObject item)
         {
             return item.ItemType == ItemObject.ItemTypeEnum.OneHandedWeapon
@@ -255,17 +269,11 @@ namespace MasterSmith
                 || item.ItemType == ItemObject.ItemTypeEnum.SlingStones;
         }
 
-        /// <summary>
-        /// Calculates the order price.
-        /// Base price (weekly) + equipment stat bonus + quality multiplier.
-        /// If the town's prices haven't been generated yet, generates them immediately.
-        /// </summary>
         private static int CalculatePrice(Town town, EquipmentElement selectedItem, ItemQuality selectedQuality)
         {
             var settings = MasterSmithSettings.Instance;
             string settlementId = town.Settlement.StringId;
 
-            // Read prices, generate if missing
             var prices = MasterSmithData.GetPricesForTown(settlementId);
             if (prices == null)
             {
@@ -286,24 +294,21 @@ namespace MasterSmith
 
                 int basePrice = prices[qualityIndex];
 
-                // Stat-based price bonus (better equipment = more expensive)
                 float statMultiplier = settings.EquipmentStatMultiplier;
                 float equipmentFactor = GetEquipmentStatFactor(selectedItem.Item);
                 int statBonus = (int)(basePrice * (equipmentFactor - 1.0f) * (statMultiplier / 10.0f));
 
-                // Quality multiplier based on current condition
                 ItemQuality currentQuality = GetItemQuality(selectedItem);
                 float qualityMultiplier = 1.0f;
                 if (currentQuality == ItemQuality.Poor || currentQuality == ItemQuality.Inferior)
-                    qualityMultiplier = 1.2f; // Slightly more expensive if in poor shape
+                    qualityMultiplier = 1.2f;
                 else if (currentQuality == ItemQuality.Masterwork && selectedQuality == ItemQuality.Legendary)
-                    qualityMultiplier = 0.85f; // Discount when upgrading from Masterwork to Legendary
+                    qualityMultiplier = 0.85f;
 
                 int finalPrice = (int)((basePrice + statBonus) * qualityMultiplier);
                 return Math.Max(1, finalPrice);
             }
 
-            // Fallback pricing (should rarely reach here)
             int baseMin = 0, baseMax = 0;
             if (IsWeapon(selectedItem.Item))
             {
@@ -326,10 +331,6 @@ namespace MasterSmith
             return MBRandom.RandomInt(baseMin, baseMax + 1);
         }
 
-        /// <summary>
-        /// Generates random weekly prices for a town from MCM ranges.
-        /// Price list: [FineWeapon, FineArmor, MasterworkWeapon, MasterworkArmor, LegendaryWeapon, LegendaryArmor]
-        /// </summary>
         private static void GeneratePricesForTown(Town town)
         {
             var settings = MasterSmithSettings.Instance;
@@ -343,10 +344,6 @@ namespace MasterSmith
             MasterSmithData.SetPricesForTown(town.Settlement.StringId, combined);
         }
 
-        /// <summary>
-        /// Calculates a stat factor based on the equipment's armor or damage values.
-        /// Higher armor/damage = higher factor. Range: 0.8 - 1.5
-        /// </summary>
         private static float GetEquipmentStatFactor(ItemObject item)
         {
             if (item.HasArmorComponent && item.ArmorComponent != null)
@@ -363,10 +360,6 @@ namespace MasterSmith
             return 1.0f;
         }
 
-        /// <summary>
-        /// Finalizes the order: takes the gold, removes the item from inventory,
-        /// and adds the order as a CSV string to ActiveOrders.
-        /// </summary>
         private static void FinalizeOrder(Town town, EquipmentElement selectedItem, ItemQuality selectedQuality, int price, int days)
         {
             GiveGoldAction.ApplyBetweenCharacters(Hero.MainHero, null, price, false);
@@ -375,38 +368,25 @@ namespace MasterSmith
             var order = SmithingOrder.Create(town, selectedItem, selectedQuality, price, days);
             MasterSmithData.ActiveOrders.Add(order.ToCsv());
 
-            InformationManager.DisplayMessage(new InformationMessage(
-                $"[MasterSmith] Order placed! Your item will be ready in {days} days.",
-                Color.FromUint(0xFF00FF00)));
+            TextObject msg = new TextObject("{=MS_ORDER_PLACED}[MasterSmith] Order placed! Your item will be ready in {DAYS} days.", null);
+            msg.SetTextVariable("DAYS", days);
+            InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFF00FF00)));
         }
 
-        /// <summary>
-        /// Finds the appropriate ItemModifier for a given item and quality.
-        /// 
-        /// Search strategy (in order):
-        /// 1. Exact name match: {quality}_{itemType} (e.g. fine_sword, masterwork_plate)
-        /// 2. Generic match: {quality}_cheap (e.g. fine_cheap)
-        /// 3. Legendary-only lordly alternative: lordly_{itemType}, lordly_cheap
-        /// 4. Fallback: any modifier whose StringId contains the quality prefix
-        /// 
-        /// Every candidate is validated with IsModifierCompatibleWithItem.
-        /// </summary>
         public static ItemModifier GetItemModifierForQuality(ItemObject item, ItemQuality quality)
         {
             var allModifiers = MBObjectManager.Instance.GetObjectTypeList<ItemModifier>();
             string prefix = quality.ToString().ToLower();
             string itemTypeStr = GetItemTypeString(item);
 
-            // Search patterns in priority order
             var patterns = new List<string>
             {
-                $"{prefix}_{itemTypeStr}",       // e.g. fine_sword
-                $"{prefix}_cheap",               // e.g. fine_cheap (generic)
-                (quality == ItemQuality.Legendary) ? $"lordly_{itemTypeStr}" : null, // Legendary-only lordly alternative
+                $"{prefix}_{itemTypeStr}",
+                $"{prefix}_cheap",
+                (quality == ItemQuality.Legendary) ? $"lordly_{itemTypeStr}" : null,
                 (quality == ItemQuality.Legendary) ? "lordly_cheap" : null
             };
 
-            // Try patterns in order, return first compatible modifier
             foreach (var pattern in patterns)
             {
                 if (pattern == null) continue;
@@ -419,7 +399,6 @@ namespace MasterSmith
                 }
             }
 
-            // Fallback: first modifier whose StringId contains the prefix and is compatible
             foreach (var modifier in allModifiers)
             {
                 if (modifier == null) continue;
@@ -431,38 +410,24 @@ namespace MasterSmith
             return null;
         }
 
-        /// <summary>
-        /// Checks whether an ItemModifier can actually be applied to a specific item.
-        /// 
-        /// Validation logic:
-        /// - If the modifier has Damage/Speed/MissileSpeed bonus, the item must be a weapon AND the bonus must be positive
-        /// - If the modifier has Armor bonus, the item must be armor AND the bonus must be positive
-        /// - If the modifier has MountSpeed/Maneuver/ChargeDamage/MountHitPoints bonus, the item must be horse harness
-        /// - Modifiers with no beneficial stats are rejected (IsBeneficial)
-        /// 
-        /// This prevents masterwork_sword from being applied to armor, fine_plate to weapons, etc.
-        /// </summary>
         private static bool IsModifierCompatibleWithItem(ItemModifier modifier, ItemObject item)
         {
             bool isWeapon = IsWeapon(item);
             bool isArmor = item.HasArmorComponent;
             bool isHorseHarness = item.ItemType == ItemObject.ItemTypeEnum.HorseHarness;
 
-            // Weapon stat bonuses check
             if (modifier.Damage != 0 || modifier.Speed != 0 || modifier.MissileSpeed != 0)
             {
                 if (!isWeapon) return false;
                 if (modifier.Damage <= 0 && modifier.Speed <= 0 && modifier.MissileSpeed <= 0) return false;
             }
 
-            // Armor stat bonus check
             if (modifier.Armor != 0)
             {
                 if (!isArmor) return false;
                 if (modifier.Armor <= 0) return false;
             }
 
-            // Mount stat bonuses check
             if (modifier.MountSpeed != 0f || modifier.Maneuver != 0f || modifier.ChargeDamage != 0f || modifier.MountHitPoints != 0f)
             {
                 if (!isHorseHarness) return false;
@@ -470,17 +435,12 @@ namespace MasterSmith
                     return false;
             }
 
-            // No beneficial stat bonuses at all
             if (!modifier.IsBeneficial())
                 return false;
 
             return true;
         }
 
-        /// <summary>
-        /// Maps an item's ItemType to the type string used in ItemModifier StringIds.
-        /// e.g. OneHandedWeapon -> "sword", HeadArmor with high armor -> "plate"
-        /// </summary>
         private static string GetItemTypeString(ItemObject item)
         {
             switch (item.ItemType)
@@ -522,9 +482,6 @@ namespace MasterSmith
             }
         }
 
-        /// <summary>
-        /// Returns the item's current quality as a human-readable string.
-        /// </summary>
         private static string GetQualityText(EquipmentElement element)
         {
             if (element.ItemModifier != null)
@@ -532,10 +489,6 @@ namespace MasterSmith
             return "Common";
         }
 
-        /// <summary>
-        /// Determines the ItemQuality enum value from the item's ItemModifier.
-        /// Matches based on keywords in the modifier's StringId.
-        /// </summary>
         private static ItemQuality GetItemQuality(EquipmentElement element)
         {
             if (element.ItemModifier == null) return ItemQuality.Common;

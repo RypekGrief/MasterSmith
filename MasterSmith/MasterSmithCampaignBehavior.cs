@@ -32,9 +32,8 @@ namespace MasterSmith
         /// </summary>
         private void OnGameLoaded(CampaignGameStarter campaignGameStarter)
         {
-            InformationManager.DisplayMessage(new InformationMessage(
-                "[MasterSmith] Mod loaded. Press CTRL + H at the smithy to open the master smith order menu.",
-                Color.FromUint(0xFF00FF00)));
+            TextObject msg = new TextObject("{=MS_LOADED}[MasterSmith] Mod loaded. Press CTRL + H at the smithy to open the master smith order menu.", null);
+            InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFF00FF00)));
         }
 
         /// <summary>
@@ -47,7 +46,6 @@ namespace MasterSmith
             if (hero != Hero.MainHero) return;
             if (!settlement.IsTown && !settlement.IsFortification) return;
 
-            // Convert CSV strings to order objects, find ready ones for this settlement
             var readyOrders = MasterSmithData.ActiveOrders
                 .Select(csv => SmithingOrder.FromCsv(csv))
                 .Where(o => o != null && o.IsReady && o.GetTown()?.Settlement == settlement)
@@ -103,7 +101,6 @@ namespace MasterSmith
                         order.IsReady = true;
                         NotifyOrderReady(order);
                     }
-                    // Write updated order back as CSV
                     MasterSmithData.ActiveOrders[i] = order.ToCsv();
                 }
             }
@@ -123,7 +120,7 @@ namespace MasterSmith
             else if (town != null)
             {
                 EquipmentElement originalItem = order.GetOriginalItem();
-                TextObject msg = new TextObject("{=MS_READY}{QUALITY} {ITEM} ekipmanınız {TOWN} Uzman Demircisinde hazır!", null);
+                TextObject msg = new TextObject("{=MS_READY}{QUALITY} {ITEM} is ready at {TOWN}'s Master Smith!", null);
                 msg.SetTextVariable("QUALITY", order.RequestedQuality.ToString());
                 msg.SetTextVariable("ITEM", originalItem.Item.Name.ToString());
                 msg.SetTextVariable("TOWN", town.Name.ToString());
@@ -145,22 +142,18 @@ namespace MasterSmith
                 EquipmentElement upgradedElement = new EquipmentElement(originalItem.Item, modifier, null, false);
                 MobileParty.MainParty.ItemRoster.AddToCounts(upgradedElement, 1);
 
-                string modifierName = modifier.Name.ToString();
-                string itemName = originalItem.Item.Name.ToString();
-                TextObject msg = new TextObject("{=MS_DELIVERED}{MODIFIER} {ITEM} envanterinize teslim edildi", null);
-                msg.SetTextVariable("MODIFIER", modifierName);
-                msg.SetTextVariable("ITEM", itemName);
+                TextObject msg = new TextObject("{=MS_DELIVERED}{MODIFIER} {ITEM} has been delivered to your inventory.", null);
+                msg.SetTextVariable("MODIFIER", modifier.Name.ToString());
+                msg.SetTextVariable("ITEM", originalItem.Item.Name.ToString());
                 InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0x00FF00)));
             }
             else
             {
                 MobileParty.MainParty.ItemRoster.AddToCounts(originalItem, 1);
-                InformationManager.DisplayMessage(new InformationMessage(
-                    "[MasterSmith] Could not apply quality modifier. Original item returned.",
-                    Color.FromUint(0xFFFF0000)));
+                TextObject msg = new TextObject("{=MS_DELIVERY_FAILED}[MasterSmith] Could not apply quality modifier. Original item returned.", null);
+                InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFFFF0000)));
             }
 
-            // Remove the CSV string from the active list
             string csvToRemove = order.ToCsv();
             MasterSmithData.ActiveOrders.Remove(csvToRemove);
         }

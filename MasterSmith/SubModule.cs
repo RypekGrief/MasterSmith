@@ -12,7 +12,7 @@ namespace MasterSmith
             base.OnSubModuleLoad();
             new Harmony("com.rypekgrief.mastersmith").PatchAll();
 
-            // MCM ayarlarını başlat
+            // Start MCM settings
             var settings = MasterSmithSettings.Instance;
         }
 

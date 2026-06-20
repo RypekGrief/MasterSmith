@@ -3,6 +3,7 @@ using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.InputSystem;
 using TaleWorlds.Library;
+using TaleWorlds.Localization;
 using TaleWorlds.MountAndBlade;
 
 namespace MasterSmith
@@ -32,18 +33,17 @@ namespace MasterSmith
                 var currentSettlement = Hero.MainHero?.CurrentSettlement;
                 if (currentSettlement == null || !currentSettlement.IsTown)
                 {
-                    InformationManager.DisplayMessage(new InformationMessage(
-                        "[MasterSmith] You must be in a town to commission items.",
-                        Color.FromUint(0xFFFF0000)));
+                    TextObject msg = new TextObject("{=MS_NOT_IN_TOWN}[MasterSmith] You must be in a town to commission items.", null);
+                    InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFFFF0000)));
                     return;
                 }
 
                 var town = currentSettlement.Town;
                 if (!MasterSmithData.IsMasterSmithCity(town))
                 {
-                    InformationManager.DisplayMessage(new InformationMessage(
-                        $"[MasterSmith] {town.Name} does not have a master smith.",
-                        Color.FromUint(0xFFFF0000)));
+                    TextObject msg = new TextObject("{=MS_NO_SMITH}[MasterSmith] {TOWN_NAME} does not have a master smith.", null);
+                    msg.SetTextVariable("TOWN_NAME", town.Name.ToString());
+                    InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFFFF0000)));
                     return;
                 }
 
