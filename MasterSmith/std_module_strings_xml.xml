@@ -1,44 +1,44 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <base xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" type="string">
-	<tags>
-		<tag language="English" />
-	</tags>
-	<strings>
-		<!-- User info messages -->
-		<string id="MS_LOADED" text="[MasterSmith] Mod loaded. Press CTRL + H at the smithy to open the master smith order menu." />
-		<string id="MS_NO_ITEMS" text="[MasterSmith] You don't have any upgradable items in your inventory." />
-		<string id="MS_NOT_IN_TOWN" text="[MasterSmith] You must be in a town to commission items." />
-		<string id="MS_NO_SMITH" text="[MasterSmith] {TOWN_NAME} does not have a master smith." />
-		<string id="MS_NO_QUALITY" text="[MasterSmith] No quality upgrades available for this item." />
-		<string id="MS_ORDER_PLACED" text="[MasterSmith] Order placed! Your item will be ready in {DAYS} days." />
-		<string id="MS_DELIVERY_FAILED" text="[MasterSmith] Could not apply quality modifier. Original item returned." />
+  <tags>
+    <tag language="English" />
+  </tags>
+  <strings>
+    <!-- User info messages -->
+    <string id="MS_LOADED" text="[MasterSmith] Mod loaded. Press CTRL + H at the smithy to open the master smith order menu." />
+    <string id="MS_NO_ITEMS" text="[MasterSmith] You don't have any upgradable items in your inventory." />
+    <string id="MS_NOT_IN_TOWN" text="[MasterSmith] You must be in a town to commission items." />
+    <string id="MS_NO_SMITH" text="[MasterSmith] {TOWN_NAME} does not have a master smith." />
+    <string id="MS_NO_QUALITY" text="[MasterSmith] No quality upgrades available for this item." />
+    <string id="MS_ORDER_PLACED" text="[MasterSmith] Order placed! Your item will be ready in {DAYS} days." />
+    <string id="MS_DELIVERY_FAILED" text="[MasterSmith] Could not apply quality modifier. Original item returned." />
 
-		<!-- Order ready & delivery notifications -->
-		<string id="MS_READY" text="{QUALITY} {ITEM} is ready at {TOWN}'s Master Smith!" />
-		<string id="MS_DELIVERED" text="{MODIFIER} {ITEM} has been delivered to your inventory." />
+    <!-- Order ready & delivery notifications -->
+    <string id="MS_READY" text="{QUALITY} {ITEM} is ready at {TOWN}'s Master Smith!" />
+    <string id="MS_DELIVERED" text="{MODIFIER} {ITEM} has been delivered to your inventory." />
 
-		<!-- Item selection menu -->
-		<string id="MS_SELECT_ITEM_TITLE" text="Select Item to Upgrade" />
-		<string id="MS_SELECT_ITEM_DESC" text="Choose which item you'd like the master smith to work on." />
-		<string id="MS_NEXT" text="Next" />
-		<string id="MS_CANCEL" text="Cancel" />
+    <!-- Item selection menu -->
+    <string id="MS_SELECT_ITEM_TITLE" text="Select Item to Upgrade" />
+    <string id="MS_SELECT_ITEM_DESC" text="Choose which item you'd like the master smith to work on." />
+    <string id="MS_NEXT" text="Next" />
+    <string id="MS_CANCEL" text="Cancel" />
 
-		<!-- Quality selection menu -->
-		<string id="MS_SELECT_QUALITY_TITLE" text="Select Quality" />
-		<string id="MS_SELECT_QUALITY_DESC" text="Choose the desired quality level." />
-		<string id="MS_CALCULATE_PRICE" text="Calculate Price" />
-		<string id="MS_BACK" text="Back" />
+    <!-- Quality selection menu -->
+    <string id="MS_SELECT_QUALITY_TITLE" text="Select Quality" />
+    <string id="MS_SELECT_QUALITY_DESC" text="Choose the desired quality level." />
+    <string id="MS_CALCULATE_PRICE" text="Calculate Price" />
+    <string id="MS_BACK" text="Back" />
 
-		<!-- Price confirmation menu -->
-		<string id="MS_CONFIRM_ORDER_TITLE" text="Confirm Order" />
-		<string id="MS_CONFIRM_ORDER_DESC" text="Item: {ITEM_NAME}\nQuality: {QUALITY}\nTime: {DAYS} days\nPrice: {PRICE} denars\n\nPlace this order?" />
-		<string id="MS_CONFIRM" text="Confirm" />
-		<string id="MS_PLACE_ORDER" text="Place Order" />
-		<string id="MS_NOT_ENOUGH_GOLD" text="Not enough gold! (Need {PRICE}, have {GOLD})" />
+    <!-- Price confirmation menu -->
+    <string id="MS_CONFIRM_ORDER_TITLE" text="Confirm Order" />
+    <string id="MS_CONFIRM_ORDER_DESC" text="Item: {ITEM_NAME}\nQuality: {QUALITY}\nTime: {DAYS} days\nPrice: {PRICE} denars\n\nPlace this order?" />
+    <string id="MS_CONFIRM" text="Confirm" />
+    <string id="MS_PLACE_ORDER" text="Place Order" />
+    <string id="MS_NOT_ENOUGH_GOLD" text="Not enough gold! (Need {PRICE}, have {GOLD})" />
 
-		<!-- Quality labels with day counts -->
-		<string id="MS_QUALITY_FINE" text="Fine ({DAYS} days)" />
-		<string id="MS_QUALITY_MASTERWORK" text="Masterwork ({DAYS} days)" />
-		<string id="MS_QUALITY_LEGENDARY" text="Legendary ({DAYS} days)" />
-	</strings>
+    <!-- Quality labels with day counts -->
+    <string id="MS_QUALITY_FINE" text="Fine ({DAYS} days)" />
+    <string id="MS_QUALITY_MASTERWORK" text="Masterwork ({DAYS} days)" />
+    <string id="MS_QUALITY_LEGENDARY" text="Legendary ({DAYS} days)" />
+  </strings>
 </base>
