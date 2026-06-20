@@ -24,5 +24,10 @@
 			</Tags>
 		</SubModule>
 	</SubModules>
-	<Xmls/>
+	<Xmls>
+		<XmlNode>
+			<!-- Language file: Under Languages/EN, the folder can be copied and translated for other languages. -->
+			<XmlName id="MSStrings" path="Languages/EN/std_module_strings_xml"/>
+		</XmlNode>
+	</Xmls>
 </Module>

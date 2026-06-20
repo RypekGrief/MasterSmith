@@ -139,11 +139,16 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="std_module_strings_xml.xml" />
     <Content Include="SubModule.xml" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <PreBuildEvent>
     </PreBuildEvent>
+  </PropertyGroup>
+  <PropertyGroup>
+    <PostBuildEvent>if not exist "$(TargetDir)..\..\ModuleData\Languages\EN" mkdir "$(TargetDir)..\..\ModuleData\Languages\EN"
+xcopy "$(ProjectDir)std_module_strings_xml.xml" "$(TargetDir)..\..\ModuleData\Languages\EN\" /Y /D</PostBuildEvent>
   </PropertyGroup>
 </Project>

@@ -7,20 +7,19 @@ using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
 using TaleWorlds.Library;
-using TaleWorlds.Localization;
 using TaleWorlds.ObjectSystem;
 
 namespace MasterSmith
 {
     /// <summary>
-    /// Sipariş akışının tüm UI ve iş mantığını yönetir.
-    /// Akış: Eşya seçimi -> Kalite seçimi -> Fiyat onayı -> Sipariş oluşturma
+    /// Manages the entire order flow UI and business logic.
+    /// Flow: Item selection -> Quality selection -> Price confirmation -> Order creation
     /// </summary>
     public static class MasterSmithOrderLogic
     {
         /// <summary>
-        /// Uzman demircinin yükseltebileceği ekipman tipleri.
-        /// Silahlar, zırhlar, kalkanlar, oklar, binek zırhları ve sancaklar dahil.
+        /// Equipment types that the master smith can upgrade.
+        /// Includes weapons, armors, shields, arrows, horse harnesses, and banners.
         /// </summary>
         private static readonly HashSet<ItemObject.ItemTypeEnum> EquipmentTypes = new HashSet<ItemObject.ItemTypeEnum>
         {
@@ -46,8 +45,8 @@ namespace MasterSmith
         };
 
         /// <summary>
-        /// Sipariş akışını başlatır. CTRL+H ile çağrılır.
-        /// Önce oyuncunun envanterinde uygun eşya var mı kontrol eder.
+        /// Starts the order flow. Called by CTRL+H.
+        /// Checks if the player has any eligible items first.
         /// </summary>
         public static void StartOrder(Town town)
         {
@@ -63,9 +62,8 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Oyuncunun envanterinden yükseltilebilir eşyaları toplar.
-        /// Legendary kalitedekileri, uygun tipte olmayanları ve
-        /// aynı StringId+Modifier kombinasyonundaki tekrarları eler.
+        /// Collects upgradable items from the player's inventory.
+        /// Filters out Legendary items, ineligible types, and duplicate StringId+Modifier combos.
         /// </summary>
         private static List<EquipmentElement> GetEligibleItemsForSmithing()
         {
@@ -87,8 +85,8 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Adım 1: Eşya seçim menüsü.
-        /// Tüm uygun eşyaları listeler, oyuncu birini seçer.
+        /// Step 1: Item selection menu.
+        /// Lists all eligible items, player picks one.
         /// </summary>
         private static void ShowItemSelection(Town town, List<EquipmentElement> items)
         {
@@ -123,22 +121,22 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Adım 2: Kalite seçim menüsü.
-        /// Seçili eşya için hangi kalitelerin mevcut olduğunu kontrol eder.
-        /// Sadece gerçekten uygulanabilir modifier'ı olan kaliteler gösterilir.
-        /// Efsanevi kalite için kültür kısıtlaması uygulanır.
+        /// Step 2: Quality selection menu.
+        /// Checks which qualities are available for the selected item.
+        /// Only qualities with a truly compatible modifier are shown.
+        /// Legendary quality has a culture restriction.
         /// </summary>
         private static void ShowQualitySelection(Town town, EquipmentElement selectedItem)
         {
             var settings = MasterSmithSettings.Instance;
             var inquiryElements = new List<InquiryElement>();
 
-            // Her kalite için uygun modifier var mı kontrol et
+            // Check for compatible modifiers for each quality
             bool canBeFine = GetItemModifierForQuality(selectedItem.Item, ItemQuality.Fine) != null;
             bool canBeMasterwork = GetItemModifierForQuality(selectedItem.Item, ItemQuality.Masterwork) != null;
             bool canBeLegendary = GetItemModifierForQuality(selectedItem.Item, ItemQuality.Legendary) != null;
 
-            // Kültür kısıtlaması: Efsanevi kalite sadece eşya ile aynı kültürdeki demircide yapılabilir
+            // Culture restriction: Legendary only at a smith of the same culture
             if (canBeLegendary)
             {
                 CultureObject smithCulture = MasterSmithData.GetSmithCulture(town);
@@ -185,8 +183,8 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Adım 3: Fiyat onay menüsü.
-        /// Hesaplanan fiyatı ve süreyi gösterir, oyuncudan onay ister.
+        /// Step 3: Price confirmation menu.
+        /// Shows the calculated price and duration, asks the player to confirm.
         /// </summary>
         private static void ShowPriceConfirmation(Town town, EquipmentElement selectedItem, ItemQuality selectedQuality)
         {
@@ -225,7 +223,7 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Seçili kalite için MCM'den yapım süresini (gün) döndürür.
+        /// Returns the crafting time in days for the given quality from MCM settings.
         /// </summary>
         private static int GetCraftingDays(ItemQuality quality)
         {
@@ -240,8 +238,7 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Eşyanın silah tipi olup olmadığını kontrol eder.
-        /// Kalkan, yay, ok, cirit vb. dahil.
+        /// Checks if an item is a weapon type (includes shields, bows, arrows, throwing, etc.).
         /// </summary>
         private static bool IsWeapon(ItemObject item)
         {
@@ -259,22 +256,24 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Sipariş fiyatını hesaplar.
-        /// Haftalık güncellenen base fiyat + ekipman istatistik bonusu + kalite çarpanı.
-        /// Eğer şehrin fiyatı henüz oluşmamışsa, hemen oluşturur (ilk hafta beklenmez).
+        /// Calculates the order price.
+        /// Base price (weekly) + equipment stat bonus + quality multiplier.
+        /// If the town's prices haven't been generated yet, generates them immediately.
         /// </summary>
         private static int CalculatePrice(Town town, EquipmentElement selectedItem, ItemQuality selectedQuality)
         {
             var settings = MasterSmithSettings.Instance;
             string settlementId = town.Settlement.StringId;
 
-            // Fiyat yoksa anında oluştur - böylece ilk hafta beklenmez ve her seferinde farklı fiyat çıkmaz
-            if (!MasterSmithData.CurrentPrices.ContainsKey(settlementId))
+            // Read prices, generate if missing
+            var prices = MasterSmithData.GetPricesForTown(settlementId);
+            if (prices == null)
             {
                 GeneratePricesForTown(town);
+                prices = MasterSmithData.GetPricesForTown(settlementId);
             }
 
-            if (MasterSmithData.CurrentPrices.TryGetValue(settlementId, out List<int> prices))
+            if (prices != null)
             {
                 bool isWeapon = IsWeapon(selectedItem.Item);
                 int qualityIndex;
@@ -287,24 +286,24 @@ namespace MasterSmith
 
                 int basePrice = prices[qualityIndex];
 
-                // Ekipmanın statlarına göre fiyat bonusu (daha iyi eşya = daha pahalı)
+                // Stat-based price bonus (better equipment = more expensive)
                 float statMultiplier = settings.EquipmentStatMultiplier;
                 float equipmentFactor = GetEquipmentStatFactor(selectedItem.Item);
                 int statBonus = (int)(basePrice * (equipmentFactor - 1.0f) * (statMultiplier / 10.0f));
 
-                // Mevcut kaliteye göre çarpan
+                // Quality multiplier based on current condition
                 ItemQuality currentQuality = GetItemQuality(selectedItem);
                 float qualityMultiplier = 1.0f;
                 if (currentQuality == ItemQuality.Poor || currentQuality == ItemQuality.Inferior)
-                    qualityMultiplier = 1.2f; // Kötü durumdaysa biraz daha pahalı
+                    qualityMultiplier = 1.2f; // Slightly more expensive if in poor shape
                 else if (currentQuality == ItemQuality.Masterwork && selectedQuality == ItemQuality.Legendary)
-                    qualityMultiplier = 0.85f; // Masterwork'ten Legendary'ye geçişte indirim
+                    qualityMultiplier = 0.85f; // Discount when upgrading from Masterwork to Legendary
 
                 int finalPrice = (int)((basePrice + statBonus) * qualityMultiplier);
                 return Math.Max(1, finalPrice);
             }
 
-            // Yedek fiyatlandırma (normalde buraya düşmez, ama güvenlik için)
+            // Fallback pricing (should rarely reach here)
             int baseMin = 0, baseMax = 0;
             if (IsWeapon(selectedItem.Item))
             {
@@ -328,8 +327,8 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Şehir için MCM aralıklarından rastgele haftalık fiyatları oluşturur.
-        /// Fiyat listesi: [FineWeapon, FineArmor, MasterworkWeapon, MasterworkArmor, LegendaryWeapon, LegendaryArmor]
+        /// Generates random weekly prices for a town from MCM ranges.
+        /// Price list: [FineWeapon, FineArmor, MasterworkWeapon, MasterworkArmor, LegendaryWeapon, LegendaryArmor]
         /// </summary>
         private static void GeneratePricesForTown(Town town)
         {
@@ -341,13 +340,12 @@ namespace MasterSmith
             combined.Add(MBRandom.RandomInt((int)settings.MasterworkArmorMinPrice, (int)settings.MasterworkArmorMaxPrice + 1));
             combined.Add(MBRandom.RandomInt((int)settings.LegendaryWeaponMinPrice, (int)settings.LegendaryWeaponMaxPrice + 1));
             combined.Add(MBRandom.RandomInt((int)settings.LegendaryArmorMinPrice, (int)settings.LegendaryArmorMaxPrice + 1));
-            MasterSmithData.CurrentPrices[town.Settlement.StringId] = combined;
+            MasterSmithData.SetPricesForTown(town.Settlement.StringId, combined);
         }
 
         /// <summary>
-        /// Ekipmanın zırh veya silah statlarına göre çarpan faktörü hesaplar.
-        /// Daha yüksek zırh değeri veya hasar = daha yüksek faktör.
-        /// Aralık: 0.8 - 1.5
+        /// Calculates a stat factor based on the equipment's armor or damage values.
+        /// Higher armor/damage = higher factor. Range: 0.8 - 1.5
         /// </summary>
         private static float GetEquipmentStatFactor(ItemObject item)
         {
@@ -366,8 +364,8 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Siparişi oluşturur: parayı alır, eşyayı envanterden çıkarır,
-        /// siparişi ActiveOrders listesine ekler.
+        /// Finalizes the order: takes the gold, removes the item from inventory,
+        /// and adds the order as a CSV string to ActiveOrders.
         /// </summary>
         private static void FinalizeOrder(Town town, EquipmentElement selectedItem, ItemQuality selectedQuality, int price, int days)
         {
@@ -375,7 +373,7 @@ namespace MasterSmith
             MobileParty.MainParty.ItemRoster.AddToCounts(selectedItem, -1);
 
             var order = SmithingOrder.Create(town, selectedItem, selectedQuality, price, days);
-            MasterSmithData.ActiveOrders.Add(order);
+            MasterSmithData.ActiveOrders.Add(order.ToCsv());
 
             InformationManager.DisplayMessage(new InformationMessage(
                 $"[MasterSmith] Order placed! Your item will be ready in {days} days.",
@@ -383,15 +381,15 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Belirli bir eşya ve kalite için uygun ItemModifier'ı bulur.
+        /// Finds the appropriate ItemModifier for a given item and quality.
         /// 
-        /// Arama stratejisi (sırasıyla):
-        /// 1. Tam isim eşleşmesi: {kalite}_{eşyaTipi} (örn: fine_sword, masterwork_plate)
-        /// 2. Genel eşleşme: {kalite}_cheap (örn: fine_cheap)
-        /// 3. Legendary için lordly alternatifi: lordly_{eşyaTipi}, lordly_cheap
-        /// 4. Son çare: StringId'sinde kalite adı geçen herhangi bir modifier
+        /// Search strategy (in order):
+        /// 1. Exact name match: {quality}_{itemType} (e.g. fine_sword, masterwork_plate)
+        /// 2. Generic match: {quality}_cheap (e.g. fine_cheap)
+        /// 3. Legendary-only lordly alternative: lordly_{itemType}, lordly_cheap
+        /// 4. Fallback: any modifier whose StringId contains the quality prefix
         /// 
-        /// Her adımda IsModifierCompatibleWithItem ile uyumluluk kontrolü yapılır.
+        /// Every candidate is validated with IsModifierCompatibleWithItem.
         /// </summary>
         public static ItemModifier GetItemModifierForQuality(ItemObject item, ItemQuality quality)
         {
@@ -399,16 +397,16 @@ namespace MasterSmith
             string prefix = quality.ToString().ToLower();
             string itemTypeStr = GetItemTypeString(item);
 
-            // Arama pattern'leri (öncelik sırasıyla)
+            // Search patterns in priority order
             var patterns = new List<string>
             {
-                $"{prefix}_{itemTypeStr}",       // Örn: fine_sword
-                $"{prefix}_cheap",               // Örn: fine_cheap (genel)
-                (quality == ItemQuality.Legendary) ? $"lordly_{itemTypeStr}" : null, // Sadece Legendary için lordly alternatifi
+                $"{prefix}_{itemTypeStr}",       // e.g. fine_sword
+                $"{prefix}_cheap",               // e.g. fine_cheap (generic)
+                (quality == ItemQuality.Legendary) ? $"lordly_{itemTypeStr}" : null, // Legendary-only lordly alternative
                 (quality == ItemQuality.Legendary) ? "lordly_cheap" : null
             };
 
-            // Pattern'leri sırayla dene, uyumlu ilk modifier'ı döndür
+            // Try patterns in order, return first compatible modifier
             foreach (var pattern in patterns)
             {
                 if (pattern == null) continue;
@@ -421,7 +419,7 @@ namespace MasterSmith
                 }
             }
 
-            // Son çare: StringId'sinde prefix geçen ve uyumlu ilk modifier
+            // Fallback: first modifier whose StringId contains the prefix and is compatible
             foreach (var modifier in allModifiers)
             {
                 if (modifier == null) continue;
@@ -434,15 +432,15 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Bir ItemModifier'ın belirli bir eşyaya uygulanabilir olup olmadığını kontrol eder.
+        /// Checks whether an ItemModifier can actually be applied to a specific item.
         /// 
-        /// Kontrol mantığı:
-        /// - Modifier'ın Damage/Speed/MissileSpeed bonusu varsa, eşya silah olmalı VE bonus pozitif olmalı
-        /// - Modifier'ın Armor bonusu varsa, eşya zırh olmalı VE bonus pozitif olmalı
-        /// - Modifier'ın MountSpeed/Maneuver/ChargeDamage/MountHitPoints bonusu varsa, eşya binek zırhı olmalı
-        /// - Hiçbir pozitif stat bonusu olmayan modifier'lar elenir (IsBeneficial)
+        /// Validation logic:
+        /// - If the modifier has Damage/Speed/MissileSpeed bonus, the item must be a weapon AND the bonus must be positive
+        /// - If the modifier has Armor bonus, the item must be armor AND the bonus must be positive
+        /// - If the modifier has MountSpeed/Maneuver/ChargeDamage/MountHitPoints bonus, the item must be horse harness
+        /// - Modifiers with no beneficial stats are rejected (IsBeneficial)
         /// 
-        /// Bu sayede masterwork_sword zırha, fine_plate silaha uygulanamaz.
+        /// This prevents masterwork_sword from being applied to armor, fine_plate to weapons, etc.
         /// </summary>
         private static bool IsModifierCompatibleWithItem(ItemModifier modifier, ItemObject item)
         {
@@ -450,21 +448,21 @@ namespace MasterSmith
             bool isArmor = item.HasArmorComponent;
             bool isHorseHarness = item.ItemType == ItemObject.ItemTypeEnum.HorseHarness;
 
-            // Silah stat bonusları kontrolü
+            // Weapon stat bonuses check
             if (modifier.Damage != 0 || modifier.Speed != 0 || modifier.MissileSpeed != 0)
             {
                 if (!isWeapon) return false;
                 if (modifier.Damage <= 0 && modifier.Speed <= 0 && modifier.MissileSpeed <= 0) return false;
             }
 
-            // Zırh stat bonusu kontrolü
+            // Armor stat bonus check
             if (modifier.Armor != 0)
             {
                 if (!isArmor) return false;
                 if (modifier.Armor <= 0) return false;
             }
 
-            // Binek stat bonusları kontrolü
+            // Mount stat bonuses check
             if (modifier.MountSpeed != 0f || modifier.Maneuver != 0f || modifier.ChargeDamage != 0f || modifier.MountHitPoints != 0f)
             {
                 if (!isHorseHarness) return false;
@@ -472,7 +470,7 @@ namespace MasterSmith
                     return false;
             }
 
-            // Hiçbir faydalı stat bonusu yoksa uyumsuz
+            // No beneficial stat bonuses at all
             if (!modifier.IsBeneficial())
                 return false;
 
@@ -480,8 +478,8 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Eşyanın ItemType'ına göre ItemModifier StringId'lerinde kullanılan tip string'ini döndürür.
-        /// Örn: OneHandedWeapon -> "sword", HeadArmor + yüksek zırh -> "plate"
+        /// Maps an item's ItemType to the type string used in ItemModifier StringIds.
+        /// e.g. OneHandedWeapon -> "sword", HeadArmor with high armor -> "plate"
         /// </summary>
         private static string GetItemTypeString(ItemObject item)
         {
@@ -525,7 +523,7 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Eşyanın mevcut kalitesini okunabilir string olarak döndürür.
+        /// Returns the item's current quality as a human-readable string.
         /// </summary>
         private static string GetQualityText(EquipmentElement element)
         {
@@ -535,8 +533,8 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Eşyanın ItemModifier'ından ItemQuality enum değerini belirler.
-        /// StringId'deki anahtar kelimelere göre eşleştirme yapar.
+        /// Determines the ItemQuality enum value from the item's ItemModifier.
+        /// Matches based on keywords in the modifier's StringId.
         /// </summary>
         private static ItemQuality GetItemQuality(EquipmentElement element)
         {

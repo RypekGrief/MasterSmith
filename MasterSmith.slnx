@@ -3,7 +3,7 @@
     <Platform Name="Any CPU" />
     <Platform Name="x64" />
   </Configurations>
-  <Project Path="MasterSmith/MasterSmith.csproj">
+  <Project Path="MasterSmith/MasterSmith.csproj" Id="126cd232-585e-4648-b83b-496cacb60441">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
 </Solution>
