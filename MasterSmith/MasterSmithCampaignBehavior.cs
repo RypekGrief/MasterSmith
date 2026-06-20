@@ -10,12 +10,12 @@ using TaleWorlds.Localization;
 namespace MasterSmith
 {
     /// <summary>
-    /// MasterSmith'in ana CampaignBehavior'ı.
+    /// Main CampaignBehavior for MasterSmith.
     /// 
-    /// Haftalık: Uzman demirci şehirlerindeki fiyatları günceller.
-    /// Günlük: Aktif siparişlerin kalan günlerini azaltır, süresi dolanları teslime hazırlar.
-    /// SettlementEntered: Oyuncu şehre girdiğinde hazır siparişleri otomatik teslim eder.
-    /// OnGameLoaded: Oyuna girişte kullanım bilgisi mesajı gösterir.
+    /// Weekly: Refreshes prices in all master smith cities.
+    /// Daily: Decrements remaining days on active orders, marks expired ones as ready.
+    /// SettlementEntered: Auto-delivers ready orders when the player enters the city.
+    /// OnGameLoaded: Shows usage hint message when a game is loaded.
     /// </summary>
     public class MasterSmithCampaignBehavior : CampaignBehaviorBase
     {
@@ -28,7 +28,7 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Oyun yüklendiğinde (yeni oyun veya kayıt yükleme) oyuncuya modun nasıl kullanılacağını bildirir.
+        /// Shows a usage hint when a game is loaded (new game or save).
         /// </summary>
         private void OnGameLoaded(CampaignGameStarter campaignGameStarter)
         {
@@ -38,17 +38,19 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Oyuncu bir yerleşkeye girdiğinde çağrılır.
-        /// Sadece ana karakter için ve sadece şehir/kale yerleşkelerinde çalışır.
-        /// O şehirde hazır bekleyen siparişleri otomatik teslim eder.
+        /// Called when the player enters a settlement.
+        /// Only triggers for the main hero and only for town/castle settlements.
+        /// Auto-delivers any ready orders for that city.
         /// </summary>
         private void OnSettlementEntered(MobileParty party, Settlement settlement, Hero hero)
         {
             if (hero != Hero.MainHero) return;
             if (!settlement.IsTown && !settlement.IsFortification) return;
 
+            // Convert CSV strings to order objects, find ready ones for this settlement
             var readyOrders = MasterSmithData.ActiveOrders
-                .Where(o => o.IsReady && o.GetTown()?.Settlement == settlement)
+                .Select(csv => SmithingOrder.FromCsv(csv))
+                .Where(o => o != null && o.IsReady && o.GetTown()?.Settlement == settlement)
                 .ToList();
 
             foreach (var order in readyOrders)
@@ -56,7 +58,7 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Haftalık tick: Tüm uzman demirci şehirlerinde fiyatları MCM aralıklarından rastgele yeniler.
+        /// Weekly tick: Randomly regenerates prices in all master smith cities from MCM ranges.
         /// </summary>
         private void OnWeeklyTick()
         {
@@ -74,18 +76,25 @@ namespace MasterSmith
                 combined.Add(MBRandom.RandomInt((int)settings.MasterworkArmorMinPrice, (int)settings.MasterworkArmorMaxPrice + 1));
                 combined.Add(MBRandom.RandomInt((int)settings.LegendaryWeaponMinPrice, (int)settings.LegendaryWeaponMaxPrice + 1));
                 combined.Add(MBRandom.RandomInt((int)settings.LegendaryArmorMinPrice, (int)settings.LegendaryArmorMaxPrice + 1));
-                MasterSmithData.CurrentPrices[settlementId] = combined;
+                MasterSmithData.SetPricesForTown(settlementId, combined);
             }
         }
 
         /// <summary>
-        /// Günlük tick: Tüm aktif siparişlerin kalan gününü 1 azaltır.
-        /// Süresi dolan siparişi teslime hazır olarak işaretler.
+        /// Daily tick: Decrements remaining days on all active orders by 1.
+        /// Marks orders as ready when DaysRemaining reaches 0.
+        /// Writes changes back as CSV strings.
         /// </summary>
         private void OnDailyTick()
         {
-            foreach (var order in MasterSmithData.ActiveOrders.ToList())
+            var orders = MasterSmithData.ActiveOrders
+                .Select(csv => SmithingOrder.FromCsv(csv))
+                .Where(o => o != null)
+                .ToList();
+
+            for (int i = 0; i < orders.Count; i++)
             {
+                var order = orders[i];
                 if (!order.IsReady)
                 {
                     order.DaysRemaining -= 1;
@@ -94,13 +103,15 @@ namespace MasterSmith
                         order.IsReady = true;
                         NotifyOrderReady(order);
                     }
+                    // Write updated order back as CSV
+                    MasterSmithData.ActiveOrders[i] = order.ToCsv();
                 }
             }
         }
 
         /// <summary>
-        /// Sipariş hazır olduğunda oyuncuya bildirim gönderir.
-        /// Eğer oyuncu o anda şehirdeyse hemen teslim eder.
+        /// Sends a notification when an order is ready.
+        /// If the player is currently in the city, delivers immediately.
         /// </summary>
         private void NotifyOrderReady(SmithingOrder order)
         {
@@ -121,8 +132,9 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Siparişi teslim eder: Uygun ItemModifier'ı bulur, yeni ekipmanı envantere ekler.
-        /// Eğer modifier bulunamazsa orijinal eşyayı geri verir.
+        /// Delivers the order: finds the matching ItemModifier, adds the upgraded item to inventory.
+        /// If no modifier is found, returns the original item.
+        /// Removes the delivered order from the active list.
         /// </summary>
         private void DeliverOrder(SmithingOrder order)
         {
@@ -148,11 +160,14 @@ namespace MasterSmith
                     Color.FromUint(0xFFFF0000)));
             }
 
-            MasterSmithData.ActiveOrders.Remove(order);
+            // Remove the CSV string from the active list
+            string csvToRemove = order.ToCsv();
+            MasterSmithData.ActiveOrders.Remove(csvToRemove);
         }
 
         /// <summary>
-        /// Kayıt dosyasına fiyatları ve aktif siparişleri yazar/okur.
+        /// Writes/reads prices and active orders to/from the save file.
+        /// Both are string-based collections, ensuring problem-free serialization.
         /// </summary>
         public override void SyncData(IDataStore dataStore)
         {

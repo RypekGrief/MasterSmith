@@ -8,18 +8,23 @@ using TaleWorlds.MountAndBlade;
 namespace MasterSmith
 {
     /// <summary>
-    /// Crafting ekranında CTRL+H kısayolu ile Uzman Demirci sipariş menüsünü açar.
-    /// GauntletCraftingScreen.OnFrameTick'e Harmony Postfix ile bağlanır.
+    /// Opens the Master Smith order menu when CTRL+H is pressed on the smithy screen.
+    /// Attached to GauntletCraftingScreen.OnFrameTick via Harmony Postfix.
+    /// 
+    /// Validates:
+    /// - Player must be in a town
+    /// - The town must have a master smith
+    /// - Prevents multiple menus from opening simultaneously via a simple flag
     /// </summary>
     [HarmonyPatch(typeof(SandBox.GauntletUI.GauntletCraftingScreen), "OnFrameTick")]
     internal class MasterSmithInputPatch
     {
-        // Tekrarlayan açılmayı engellemek için basit flag
+        // Simple flag to prevent re-entry while the menu is open
         private static bool _orderScreenOpen = false;
 
         static void Postfix()
         {
-            // CTRL+H: Uzman Demirci sipariş menüsünü açar
+            // CTRL+H: Opens the Master Smith order menu
             if (Input.IsKeyDown(InputKey.LeftControl) && Input.IsKeyPressed(InputKey.H))
             {
                 if (_orderScreenOpen) return;
