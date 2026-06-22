@@ -361,3 +361,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Project documentation (not for public repo)
+AGENTS.md
+History.md
+Log_MasterSmith.md
+Log_TestMod.md

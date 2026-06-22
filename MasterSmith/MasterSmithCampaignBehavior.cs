@@ -20,6 +20,11 @@ namespace MasterSmith
     /// </summary>
     public class MasterSmithCampaignBehavior : CampaignBehaviorBase
     {
+        /// <summary>
+        /// Registers all campaign event listeners.
+        /// WeeklyTick: price refresh. DailyTick: order progress. SettlementEntered: auto-delivery.
+        /// OnGameLoaded: usage hint. OnNewGameCreated: data cleanup.
+        /// </summary>
         public override void RegisterEvents()
         {
             CampaignEvents.WeeklyTickEvent.AddNonSerializedListener(this, OnWeeklyTick);
@@ -182,8 +187,9 @@ namespace MasterSmith
                 InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFFFF0000)));
             }
 
-            string csvToRemove = order.ToCsv();
-            MasterSmithData.ActiveOrders.Remove(csvToRemove);
+            int index = MasterSmithData.ActiveOrders.FindIndex(csv => csv.StartsWith(order.OrderId + "|"));
+            if (index >= 0)
+                MasterSmithData.ActiveOrders.RemoveAt(index);
         }
 
         /// <summary>
