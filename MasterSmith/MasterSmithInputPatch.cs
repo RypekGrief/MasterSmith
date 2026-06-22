@@ -20,9 +20,14 @@ namespace MasterSmith
     [HarmonyPatch(typeof(SandBox.GauntletUI.GauntletCraftingScreen), "OnFrameTick")]
     internal class MasterSmithInputPatch
     {
-        // Simple flag to prevent re-entry while the menu is open
+        /// <summary>Prevents opening multiple order menus simultaneously.</summary>
         private static bool _orderScreenOpen = false;
 
+        /// <summary>
+        /// Harmony Postfix on GauntletCraftingScreen.OnFrameTick.
+        /// Detects CTRL+H keypress and opens the Master Smith order menu.
+        /// Validates that the player is in a town with a master smith before opening.
+        /// </summary>
         static void Postfix()
         {
             // CTRL+H: Opens the Master Smith order menu

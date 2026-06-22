@@ -51,7 +51,7 @@ namespace MasterSmith
         /// </summary>
         public static void StartOrder(Town town)
         {
-            var playerItems = GetEligibleItemsForSmithing();
+            var playerItems = GetEligibleItemsForSmithing(town);
             if (playerItems.Count == 0)
             {
                 TextObject msg = new TextObject("{=MS_NO_ITEMS}[MasterSmith] You don't have any upgradable items in your inventory.", null);
@@ -65,7 +65,7 @@ namespace MasterSmith
         /// Collects upgradable items from the player's inventory.
         /// Filters out Legendary items, ineligible types, and duplicate StringId+Modifier combos.
         /// </summary>
-        private static List<EquipmentElement> GetEligibleItemsForSmithing()
+        private static List<EquipmentElement> GetEligibleItemsForSmithing(Town town)
         {
             var items = new List<EquipmentElement>();
             var playerRoster = MobileParty.MainParty?.ItemRoster;
@@ -79,9 +79,41 @@ namespace MasterSmith
                 if (GetItemQuality(element) == ItemQuality.Legendary) continue;
                 if (items.Any(e => e.Item.StringId == element.Item.StringId && e.ItemModifier == element.ItemModifier))
                     continue;
+                if (!HasViableQualityUpgrade(element, town))
+                    continue;
                 items.Add(element);
             }
             return items;
+        }
+
+        /// <summary>
+        /// Checks whether the given equipment element has any viable quality upgrade path.
+        /// Considers the item's current quality, available ItemModifiers, and the town's culture for Legendary restriction.
+        /// Returns false if no higher quality modifier exists for this item.
+        /// </summary>
+        private static bool HasViableQualityUpgrade(EquipmentElement element, Town town)
+        {
+            ItemQuality current = GetItemQuality(element);
+
+            if (current < ItemQuality.Fine
+                && GetItemModifierForQuality(element.Item, ItemQuality.Fine) != null)
+                return true;
+
+            if (current < ItemQuality.Masterwork
+                && GetItemModifierForQuality(element.Item, ItemQuality.Masterwork) != null)
+                return true;
+
+            if (current < ItemQuality.Legendary
+                && GetItemModifierForQuality(element.Item, ItemQuality.Legendary) != null)
+            {
+                CultureObject smithCulture = MasterSmithData.GetSmithCulture(town);
+                CultureObject itemCulture = element.Item.Culture as CultureObject;
+                if (!(smithCulture != null && itemCulture != null
+                    && smithCulture.StringId != itemCulture.StringId))
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -143,6 +175,14 @@ namespace MasterSmith
                     canBeLegendary = false;
             }
 
+            ItemQuality currentQuality = GetItemQuality(selectedItem);
+            if (currentQuality >= ItemQuality.Fine)
+                canBeFine = false;
+            if (currentQuality >= ItemQuality.Masterwork)
+                canBeMasterwork = false;
+            if (currentQuality >= ItemQuality.Legendary)
+                canBeLegendary = false;
+
             if (canBeFine)
             {
                 TextObject fineText = new TextObject("{=MS_QUALITY_FINE}Fine ({DAYS} days)", null);
@@ -187,7 +227,7 @@ namespace MasterSmith
                             ShowPriceConfirmation(town, selectedItem, selectedQuality);
                         }
                     },
-                    negativeAction: (list) => ShowItemSelection(town, GetEligibleItemsForSmithing())
+                    negativeAction: (list) => ShowItemSelection(town, GetEligibleItemsForSmithing(town))
                 ));
         }
 
@@ -242,6 +282,7 @@ namespace MasterSmith
                 ));
         }
 
+        /// <summary>Returns the crafting duration (in days) for the given quality from MCM settings.</summary>
         private static int GetCraftingDays(ItemQuality quality)
         {
             var settings = MasterSmithSettings.Instance;
@@ -254,6 +295,7 @@ namespace MasterSmith
             }
         }
 
+        /// <summary>Returns true if the item is a weapon or shield (used for weapon/armor price differentiation).</summary>
         private static bool IsWeapon(ItemObject item)
         {
             return item.ItemType == ItemObject.ItemTypeEnum.OneHandedWeapon
@@ -269,6 +311,11 @@ namespace MasterSmith
                 || item.ItemType == ItemObject.ItemTypeEnum.SlingStones;
         }
 
+        /// <summary>
+        /// Calculates the final price in denars for upgrading an item to a given quality.
+        /// Uses the town's weekly CSV prices, the item's equipment stat factor, and quality modifiers.
+        /// Falls back to MCM min/max ranges if no weekly prices have been generated yet.
+        /// </summary>
         private static int CalculatePrice(Town town, EquipmentElement selectedItem, ItemQuality selectedQuality)
         {
             var settings = MasterSmithSettings.Instance;
@@ -331,6 +378,7 @@ namespace MasterSmith
             return MBRandom.RandomInt(baseMin, baseMax + 1);
         }
 
+        /// <summary>Generates a new set of 6 random CSV prices for a town based on MCM min/max ranges.</summary>
         private static void GeneratePricesForTown(Town town)
         {
             var settings = MasterSmithSettings.Instance;
@@ -344,6 +392,11 @@ namespace MasterSmith
             MasterSmithData.SetPricesForTown(town.Settlement.StringId, combined);
         }
 
+        /// <summary>
+        /// Computes a stat-based multiplier for pricing. Better equipment costs more.
+        /// For armor: (totalArmor / 100f) * 0.7f + 0.8f. For weapons: (damage / 100f) * 0.7f + 0.8f.
+        /// Returns 1.0f if neither armor nor weapon data is available.
+        /// </summary>
         private static float GetEquipmentStatFactor(ItemObject item)
         {
             if (item.HasArmorComponent && item.ArmorComponent != null)
@@ -360,6 +413,10 @@ namespace MasterSmith
             return 1.0f;
         }
 
+        /// <summary>
+        /// Finalizes the order: deducts gold, removes the item from inventory, and adds the order CSV to ActiveOrders.
+        /// Displays a confirmation message with the number of days until completion.
+        /// </summary>
         private static void FinalizeOrder(Town town, EquipmentElement selectedItem, ItemQuality selectedQuality, int price, int days)
         {
             GiveGoldAction.ApplyBetweenCharacters(Hero.MainHero, null, price, false);
@@ -373,6 +430,11 @@ namespace MasterSmith
             InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFF00FF00)));
         }
 
+        /// <summary>
+        /// Finds the best matching ItemModifier for the given item and target quality.
+        /// Searches by naming patterns (e.g. "fine_sword", "lordly_plate"), then falls back to a broader prefix match.
+        /// All candidates are validated via IsModifierCompatibleWithItem before being returned.
+        /// </summary>
         public static ItemModifier GetItemModifierForQuality(ItemObject item, ItemQuality quality)
         {
             var allModifiers = MBObjectManager.Instance.GetObjectTypeList<ItemModifier>();
@@ -410,6 +472,11 @@ namespace MasterSmith
             return null;
         }
 
+        /// <summary>
+        /// Validates that a given ItemModifier is truly compatible with an item.
+        /// Checks: weapon modifiers only apply to weapons, armor modifiers only to armor,
+        /// horse harness modifiers only to horse harnesses, and the modifier must be beneficial (stat > 0).
+        /// </summary>
         private static bool IsModifierCompatibleWithItem(ItemModifier modifier, ItemObject item)
         {
             bool isWeapon = IsWeapon(item);
@@ -441,6 +508,10 @@ namespace MasterSmith
             return true;
         }
 
+        /// <summary>
+        /// Maps an item's ItemTypeEnum to a string used for modifier ID lookups.
+        /// Weapons map to "sword"/"bow"/"polearm"/etc. Armors map to "plate"/"chain"/"leather"/"cloth" based on total armor rating.
+        /// </summary>
         private static string GetItemTypeString(ItemObject item)
         {
             switch (item.ItemType)
@@ -482,6 +553,7 @@ namespace MasterSmith
             }
         }
 
+        /// <summary>Returns the item modifier name as a display string, or "Common" if the item has no modifier.</summary>
         private static string GetQualityText(EquipmentElement element)
         {
             if (element.ItemModifier != null)
@@ -489,6 +561,11 @@ namespace MasterSmith
             return "Common";
         }
 
+        /// <summary>
+        /// Determines the ItemQuality of an EquipmentElement by inspecting its modifier's StringId.
+        /// Checks for legendary/lordly, masterwork, fine, poor (cracked/rusty/dull/bent/etc.),
+        /// and inferior (battered/lame/loose/unbalanced) keywords. Defaults to Common.
+        /// </summary>
         private static ItemQuality GetItemQuality(EquipmentElement element)
         {
             if (element.ItemModifier == null) return ItemQuality.Common;

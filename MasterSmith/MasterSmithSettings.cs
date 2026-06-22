@@ -22,10 +22,13 @@ namespace MasterSmith
     /// </summary>
     public class MasterSmithSettings : AttributeGlobalSettings<MasterSmithSettings>
     {
-        // MCM system identifiers
+        /// <summary>MCM unique identifier for this settings file. Used to load/store presets.</summary>
         public override string Id => "MasterSmith_v1";
+        /// <summary>Display name shown in the MCM settings menu.</summary>
         public override string DisplayName => "Master Smith";
+        /// <summary>Folder name where the settings JSON file is stored.</summary>
         public override string FolderName => "MasterSmith";
+        /// <summary>Settings serialization format. "json2" supports nested objects and arrays.</summary>
         public override string FormatType => "json2";
 
         // ========================================
