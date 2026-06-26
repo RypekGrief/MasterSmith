@@ -60,20 +60,28 @@ namespace MasterSmith
 
         /// <summary>
         /// Checks if the given town has a master smith.
+        /// When UseSpecificCities is ON: checks the hardcoded vanilla city list.
+        /// When OFF: any town qualifies (for modded maps / 1.3.15+ compatibility).
         /// </summary>
         public static bool IsMasterSmithCity(Town town)
         {
             if (town == null) return false;
+            if (!MasterSmithSettings.Instance.UseSpecificCities)
+                return town.IsTown;
             return SmithCities.ContainsKey(town.Settlement.StringId);
         }
 
         /// <summary>
         /// Returns the culture of the town's master smith.
-        /// Used for culture restriction. Returns null if the town is not in the list.
+        /// When UseSpecificCities is ON: looks up culture from the hardcoded list.
+        /// When OFF: returns the town's actual settlement culture directly.
         /// </summary>
         public static CultureObject GetSmithCulture(Town town)
         {
             if (town == null) return null;
+            if (!MasterSmithSettings.Instance.UseSpecificCities)
+                return town.Settlement?.Culture;
+
             string townId = town.Settlement.StringId;
             if (SmithCities.TryGetValue(townId, out string cultureId))
                 return MBObjectManager.Instance.GetObject<CultureObject>(cultureId);
