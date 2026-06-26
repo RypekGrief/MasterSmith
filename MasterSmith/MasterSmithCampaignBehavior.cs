@@ -74,24 +74,46 @@ namespace MasterSmith
 
         /// <summary>
         /// Weekly tick: Randomly regenerates prices in all master smith cities from MCM ranges.
+        /// When UseSpecificCities is ON: iterates the 9 hardcoded vanilla cities.
+        /// When OFF: generates prices for all towns on the map (modded map / 1.3.15+ compatibility).
         /// </summary>
         private void OnWeeklyTick()
         {
-            foreach (var kvp in MasterSmithData.SmithCities)
-            {
-                string settlementId = kvp.Key;
-                Town town = Town.AllTowns.FirstOrDefault(t => t.Settlement.StringId == settlementId);
-                if (town == null) continue;
+            var settings = MasterSmithSettings.Instance;
 
-                var settings = MasterSmithSettings.Instance;
-                var combined = new List<int>(6);
-                combined.Add(MBRandom.RandomInt((int)settings.FineWeaponMinPrice, (int)settings.FineWeaponMaxPrice + 1));
-                combined.Add(MBRandom.RandomInt((int)settings.FineArmorMinPrice, (int)settings.FineArmorMaxPrice + 1));
-                combined.Add(MBRandom.RandomInt((int)settings.MasterworkWeaponMinPrice, (int)settings.MasterworkWeaponMaxPrice + 1));
-                combined.Add(MBRandom.RandomInt((int)settings.MasterworkArmorMinPrice, (int)settings.MasterworkArmorMaxPrice + 1));
-                combined.Add(MBRandom.RandomInt((int)settings.LegendaryWeaponMinPrice, (int)settings.LegendaryWeaponMaxPrice + 1));
-                combined.Add(MBRandom.RandomInt((int)settings.LegendaryArmorMinPrice, (int)settings.LegendaryArmorMaxPrice + 1));
-                MasterSmithData.SetPricesForTown(settlementId, combined);
+            if (settings.UseSpecificCities)
+            {
+                foreach (var kvp in MasterSmithData.SmithCities)
+                {
+                    string settlementId = kvp.Key;
+                    Town town = Town.AllTowns.FirstOrDefault(t => t.Settlement.StringId == settlementId);
+                    if (town == null) continue;
+
+                    var combined = new List<int>(6);
+                    combined.Add(MBRandom.RandomInt((int)settings.FineWeaponMinPrice, (int)settings.FineWeaponMaxPrice + 1));
+                    combined.Add(MBRandom.RandomInt((int)settings.FineArmorMinPrice, (int)settings.FineArmorMaxPrice + 1));
+                    combined.Add(MBRandom.RandomInt((int)settings.MasterworkWeaponMinPrice, (int)settings.MasterworkWeaponMaxPrice + 1));
+                    combined.Add(MBRandom.RandomInt((int)settings.MasterworkArmorMinPrice, (int)settings.MasterworkArmorMaxPrice + 1));
+                    combined.Add(MBRandom.RandomInt((int)settings.LegendaryWeaponMinPrice, (int)settings.LegendaryWeaponMaxPrice + 1));
+                    combined.Add(MBRandom.RandomInt((int)settings.LegendaryArmorMinPrice, (int)settings.LegendaryArmorMaxPrice + 1));
+                    MasterSmithData.SetPricesForTown(settlementId, combined);
+                }
+            }
+            else
+            {
+                foreach (var town in Town.AllTowns)
+                {
+                    if (!town.IsTown) continue;
+
+                    var combined = new List<int>(6);
+                    combined.Add(MBRandom.RandomInt((int)settings.FineWeaponMinPrice, (int)settings.FineWeaponMaxPrice + 1));
+                    combined.Add(MBRandom.RandomInt((int)settings.FineArmorMinPrice, (int)settings.FineArmorMaxPrice + 1));
+                    combined.Add(MBRandom.RandomInt((int)settings.MasterworkWeaponMinPrice, (int)settings.MasterworkWeaponMaxPrice + 1));
+                    combined.Add(MBRandom.RandomInt((int)settings.MasterworkArmorMinPrice, (int)settings.MasterworkArmorMaxPrice + 1));
+                    combined.Add(MBRandom.RandomInt((int)settings.LegendaryWeaponMinPrice, (int)settings.LegendaryWeaponMaxPrice + 1));
+                    combined.Add(MBRandom.RandomInt((int)settings.LegendaryArmorMinPrice, (int)settings.LegendaryArmorMaxPrice + 1));
+                    MasterSmithData.SetPricesForTown(town.Settlement.StringId, combined);
+                }
             }
         }
 

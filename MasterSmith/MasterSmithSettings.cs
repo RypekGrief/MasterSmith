@@ -131,5 +131,14 @@ namespace MasterSmith
         [SettingPropertyFloatingInteger("Legendary Crafting Days", 1f, 365f, "0", Order = 16, RequireRestart = false, HintText = "Days required to craft a Legendary quality item.")]
         [SettingPropertyGroup("General", GroupOrder = 4)]
         public float LegendaryCraftingDays { get; set; } = 30f;
+
+        /// <summary>
+        /// When ON, master smiths are only available in 9 specific vanilla cities.
+        /// When OFF, all towns have master smiths (for modded maps like Realm of Thrones and Bannerlord 1.3.15+).
+        /// Default: true (specific cities)
+        /// </summary>
+        [SettingPropertyBool("Use Specific Smith Cities", Order = 17, RequireRestart = false, HintText = "ON: Only 9 specific vanilla cities have master smiths. OFF: All towns have master smiths (for modded maps like Realm of Thrones).")]
+        [SettingPropertyGroup("General", GroupOrder = 4)]
+        public bool UseSpecificCities { get; set; } = true;
     }
 }
