@@ -140,5 +140,41 @@ namespace MasterSmith
         [SettingPropertyBool("Use Specific Smith Cities", Order = 17, RequireRestart = false, HintText = "ON: Only 9 specific vanilla cities have master smiths. OFF: All towns have master smiths (for modded maps like Realm of Thrones).")]
         [SettingPropertyGroup("General", GroupOrder = 4)]
         public bool UseSpecificCities { get; set; } = true;
+
+        // ========================================
+        // RUSH ORDER SETTINGS (Group 5)
+        // ========================================
+
+        /// <summary>
+        /// When ON, players can pay extra to halve the crafting time.
+        /// When OFF, only standard orders are available.
+        /// Default: true
+        /// </summary>
+        [SettingPropertyBool("Enable Rush Orders", Order = 18, RequireRestart = false, HintText = "When ON, players can pay extra to halve the crafting time. When OFF, only standard orders are available.")]
+        [SettingPropertyGroup("Rush Orders", GroupOrder = 5)]
+        public bool EnableRushOrders { get; set; } = true;
+
+        /// <summary>Price multiplier for rush orders. 1.5 = 150% of standard price. Default: 1.5, Range: 1.0–5.0</summary>
+        [SettingPropertyFloatingInteger("Rush Order Price Multiplier", 1.0f, 5.0f, "0.0", Order = 19, RequireRestart = false, HintText = "Price multiplier for rush orders. 1.5 = 150% of standard price.")]
+        [SettingPropertyGroup("Rush Orders", GroupOrder = 5)]
+        public float RushOrderPriceMultiplier { get; set; } = 1.5f;
+
+        // ========================================
+        // ORDER CANCELLATION SETTINGS (Group 6)
+        // ========================================
+
+        /// <summary>
+        /// When ON, players can cancel in-progress orders to get the item back with a partial refund.
+        /// When OFF, orders cannot be cancelled.
+        /// Default: true
+        /// </summary>
+        [SettingPropertyBool("Enable Order Cancellation", Order = 20, RequireRestart = false, HintText = "When ON, players can cancel in-progress orders and receive a partial refund. When OFF, orders cannot be cancelled.")]
+        [SettingPropertyGroup("Cancellation", GroupOrder = 6)]
+        public bool EnableOrderCancellation { get; set; } = true;
+
+        /// <summary>Refund multiplier for cancelled orders. 0.5 = 50% refund. Default: 0.5, Range: 0.0–1.0</summary>
+        [SettingPropertyFloatingInteger("Cancellation Refund Multiplier", 0.0f, 1.0f, "0.00", Order = 21, RequireRestart = false, HintText = "Percentage of the order price refunded on cancellation. 0.5 = 50%, 1.0 = full refund.")]
+        [SettingPropertyGroup("Cancellation", GroupOrder = 6)]
+        public float CancellationRefundMultiplier { get; set; } = 0.5f;
     }
 }

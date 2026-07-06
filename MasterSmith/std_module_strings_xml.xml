@@ -33,11 +33,11 @@
 		<string id="MS_CONFIRM_ORDER_TITLE" text="Confirm Order" />
 		<string id="MS_CONFIRM_ORDER_DESC" text="Item: {ITEM_NAME}
 Quality: {QUALITY}
-Time: {DAYS} days
-Price: {PRICE} denars
 
-Place this order?" />
+{STATS}" />
 		<string id="MS_CONFIRM" text="Confirm" />
+		<string id="MS_RUSH_STANDARD" text="Standard — {RUSH_DAYS}d, {RUSH_PRICE} denars" />
+		<string id="MS_RUSH_ORDER" text="Rush — {RUSH_DAYS}d, {RUSH_PRICE} denars" />
 		<string id="MS_PLACE_ORDER" text="Place Order" />
 		<string id="MS_NOT_ENOUGH_GOLD" text="Not enough gold! (Need {PRICE}, have {GOLD})" />
 
@@ -45,5 +45,23 @@ Place this order?" />
 		<string id="MS_QUALITY_FINE" text="Fine ({DAYS} days)" />
 		<string id="MS_QUALITY_MASTERWORK" text="Masterwork ({DAYS} days)" />
 		<string id="MS_QUALITY_LEGENDARY" text="Legendary ({DAYS} days)" />
+
+		<!-- Active orders & cancellation -->
+		<string id="MS_ACTIVE_ORDERS_TITLE" text="Active Orders" />
+		<string id="MS_ACTIVE_ORDERS_DESC" text="Select an order to cancel, or place a new one." />
+		<string id="MS_ACTIVE_ORDER" text="{QUALITY} {ITEM} — {DAYS} days remaining" />
+		<string id="MS_NEW_ORDER" text="New Order" />
+		<string id="MS_CLOSE" text="Close" />
+		<string id="MS_SELECT" text="Select" />
+		<string id="MS_CANCEL_ORDER_TITLE" text="Cancel Order" />
+		<string id="MS_CANCEL_ORDER_DESC" text="Cancel this order?
+
+{QUALITY} {ITEM}
+Time remaining: {DAYS} days
+Refund: {REFUND} denars
+
+You will receive the item back." />
+		<string id="MS_CANCEL_YES" text="Yes, cancel and refund" />
+		<string id="MS_ORDER_CANCELLED" text="[MasterSmith] Order cancelled. {ITEM} returned, {REFUND} denars refunded." />
 	</strings>
 </base>
