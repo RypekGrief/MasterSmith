@@ -47,10 +47,25 @@ namespace MasterSmith
 
         /// <summary>
         /// Starts the order flow. Called by CTRL+H.
-        /// Checks if the player has any eligible items first.
+        /// If the player has active in-progress orders in this town, shows the active orders list first.
+        /// Otherwise proceeds directly to item selection.
         /// </summary>
         public static void StartOrder(Town town)
         {
+            if (MasterSmithSettings.Instance.EnableOrderCancellation)
+            {
+                var townOrders = MasterSmithData.ActiveOrders
+                    .Select(csv => SmithingOrder.FromCsv(csv))
+                    .Where(o => o != null && !o.IsReady && o.GetTown()?.Settlement == town.Settlement)
+                    .ToList();
+
+                if (townOrders.Count > 0)
+                {
+                    ShowActiveOrders(town, townOrders);
+                    return;
+                }
+            }
+
             var playerItems = GetEligibleItemsForSmithing(town);
             if (playerItems.Count == 0)
             {
@@ -233,33 +248,61 @@ namespace MasterSmith
 
         /// <summary>
         /// Step 3: Price confirmation menu.
-        /// Shows the calculated price and duration, asks the player to confirm.
+        /// Shows the item name, quality, and stat preview in the description.
+        /// Offers Standard and Rush (if enabled) order options with their respective price and days.
         /// </summary>
         private static void ShowPriceConfirmation(Town town, EquipmentElement selectedItem, ItemQuality selectedQuality)
         {
-            int price = CalculatePrice(town, selectedItem, selectedQuality);
-            int days = GetCraftingDays(selectedQuality);
+            var settings = MasterSmithSettings.Instance;
+            int standardPrice = CalculatePrice(town, selectedItem, selectedQuality);
+            int standardDays = GetCraftingDays(selectedQuality);
+            string statsPreview = BuildStatComparison(selectedItem, selectedQuality);
 
-            TextObject descText = new TextObject("{=MS_CONFIRM_ORDER_DESC}Item: {ITEM_NAME}\nQuality: {QUALITY}\nTime: {DAYS} days\nPrice: {PRICE} denars\n\nPlace this order?", null);
+            int rushDays = Math.Max(1, standardDays / 2);
+            int rushPrice = (int)(standardPrice * settings.RushOrderPriceMultiplier);
+
+            TextObject descText = new TextObject("{=MS_CONFIRM_ORDER_DESC}Item: {ITEM_NAME}\nQuality: {QUALITY}\n\n{STATS}", null);
             descText.SetTextVariable("ITEM_NAME", selectedItem.Item.Name.ToString());
             descText.SetTextVariable("QUALITY", selectedQuality.ToString());
-            descText.SetTextVariable("DAYS", days);
-            descText.SetTextVariable("PRICE", price);
+            descText.SetTextVariable("STATS", statsPreview);
             string message = descText.ToString();
 
-            bool canAfford = Hero.MainHero.Gold >= price;
-
             var inquiryElements = new List<InquiryElement>();
-            if (canAfford)
-                inquiryElements.Add(new InquiryElement(true, new TextObject("{=MS_PLACE_ORDER}Place Order", null).ToString(), null));
+            bool canAffordStd = Hero.MainHero.Gold >= standardPrice;
+            bool canAffordRush = settings.EnableRushOrders && Hero.MainHero.Gold >= rushPrice;
+
+            if (canAffordStd)
+            {
+                TextObject stdText = new TextObject("{=MS_RUSH_STANDARD}Standard — {RUSH_DAYS}d, {RUSH_PRICE} denars", null);
+                stdText.SetTextVariable("RUSH_DAYS", standardDays);
+                stdText.SetTextVariable("RUSH_PRICE", standardPrice);
+                inquiryElements.Add(new InquiryElement(0, stdText.ToString(), null));
+            }
             else
             {
-                TextObject poorText = new TextObject("{=MS_NOT_ENOUGH_GOLD}Not enough gold! (Need {PRICE}, have {GOLD})", null);
-                poorText.SetTextVariable("PRICE", price);
-                poorText.SetTextVariable("GOLD", Hero.MainHero.Gold);
-                inquiryElements.Add(new InquiryElement(false, poorText.ToString(), null));
+                TextObject poorText = new TextObject("{=MS_NOT_ENOUGH_GOLD}Not enough gold! (Need {PRICE})", null);
+                poorText.SetTextVariable("PRICE", standardPrice);
+                inquiryElements.Add(new InquiryElement(-1, poorText.ToString(), null));
             }
-            inquiryElements.Add(new InquiryElement(false, new TextObject("{=MS_CANCEL}Cancel", null).ToString(), null));
+
+            if (settings.EnableRushOrders)
+            {
+                if (canAffordRush)
+                {
+                    TextObject rushText = new TextObject("{=MS_RUSH_ORDER}Rush — {RUSH_DAYS}d, {RUSH_PRICE} denars", null);
+                    rushText.SetTextVariable("RUSH_DAYS", rushDays);
+                    rushText.SetTextVariable("RUSH_PRICE", rushPrice);
+                    inquiryElements.Add(new InquiryElement(1, rushText.ToString(), null));
+                }
+                else
+                {
+                    TextObject poorText = new TextObject("{=MS_NOT_ENOUGH_GOLD}Not enough gold! (Need {PRICE})", null);
+                    poorText.SetTextVariable("PRICE", rushPrice);
+                    inquiryElements.Add(new InquiryElement(-1, poorText.ToString(), null));
+                }
+            }
+
+            inquiryElements.Add(new InquiryElement(-1, new TextObject("{=MS_CANCEL}Cancel", null).ToString(), null));
 
             MBInformationManager.ShowMultiSelectionInquiry(
                 new MultiSelectionInquiryData(
@@ -273,9 +316,13 @@ namespace MasterSmith
                     negativeText: new TextObject("{=MS_BACK}Back", null).ToString(),
                     affirmativeAction: (selectedOptions) =>
                     {
-                        if (selectedOptions.Count > 0 && (bool)selectedOptions[0].Identifier)
+                        if (selectedOptions.Count > 0)
                         {
-                            FinalizeOrder(town, selectedItem, selectedQuality, price, days);
+                            int choice = (int)selectedOptions[0].Identifier;
+                            if (choice < 0) return;
+                            int finalPrice = choice == 1 ? rushPrice : standardPrice;
+                            int finalDays  = choice == 1 ? rushDays  : standardDays;
+                            FinalizeOrder(town, selectedItem, selectedQuality, finalPrice, finalDays);
                         }
                     },
                     negativeAction: (list) => ShowQualitySelection(town, selectedItem)
@@ -579,6 +626,170 @@ namespace MasterSmith
             if (modifierId.Contains("battered") || modifierId.Contains("lame") || modifierId.Contains("loose")
                 || modifierId.Contains("unbalanced")) return ItemQuality.Inferior;
             return ItemQuality.Common;
+        }
+
+        /// <summary>
+        /// Builds a before-vs-after stat comparison string for the price confirmation menu.
+        /// Computes modified stats for the current item and the item with the target quality modifier.
+        /// For weapons: Swing/Thrust Damage, Speed, Handling.
+        /// For armor: Head/Body/Arm/Leg Armor.
+        /// For horse harness: Mount Speed, Maneuver, Charge, Hit Points.
+        /// </summary>
+        private static string BuildStatComparison(EquipmentElement selectedItem, ItemQuality targetQuality)
+        {
+            ItemModifier targetModifier = GetItemModifierForQuality(selectedItem.Item, targetQuality);
+            if (targetModifier == null)
+                return "No stat changes.";
+
+            EquipmentElement after = new EquipmentElement(selectedItem.Item, targetModifier, null, false);
+            var lines = new List<string>();
+
+            if (IsWeapon(selectedItem.Item))
+            {
+                int beforeDmg = selectedItem.GetModifiedSwingDamageForUsage(0);
+                int afterDmg = after.GetModifiedSwingDamageForUsage(0);
+                lines.Add(string.Concat("Swing Damage:  ", beforeDmg.ToString(), " \u2192 ", afterDmg.ToString()));
+
+                int beforeThrust = selectedItem.GetModifiedThrustDamageForUsage(0);
+                int afterThrust = after.GetModifiedThrustDamageForUsage(0);
+                if (beforeThrust > 0 || afterThrust > 0)
+                    lines.Add(string.Concat("Thrust Damage: ", beforeThrust.ToString(), " \u2192 ", afterThrust.ToString()));
+
+                int beforeSpeed = selectedItem.GetModifiedSwingSpeedForUsage(0);
+                int afterSpeed = after.GetModifiedSwingSpeedForUsage(0);
+                lines.Add(string.Concat("Speed:         ", beforeSpeed.ToString(), " \u2192 ", afterSpeed.ToString()));
+
+                int beforeHandle = selectedItem.GetModifiedHandlingForUsage(0);
+                int afterHandle = after.GetModifiedHandlingForUsage(0);
+                lines.Add(string.Concat("Handling:      ", beforeHandle.ToString(), " \u2192 ", afterHandle.ToString()));
+            }
+            else if (selectedItem.Item.HasArmorComponent)
+            {
+                lines.Add(string.Concat("Head Armor:  ", selectedItem.GetModifiedHeadArmor().ToString(), " \u2192 ", after.GetModifiedHeadArmor().ToString()));
+                lines.Add(string.Concat("Body Armor:  ", selectedItem.GetModifiedBodyArmor().ToString(), " \u2192 ", after.GetModifiedBodyArmor().ToString()));
+                lines.Add(string.Concat("Arm Armor:   ", selectedItem.GetModifiedArmArmor().ToString(), " \u2192 ", after.GetModifiedArmArmor().ToString()));
+                lines.Add(string.Concat("Leg Armor:   ", selectedItem.GetModifiedLegArmor().ToString(), " \u2192 ", after.GetModifiedLegArmor().ToString()));
+            }
+            else if (selectedItem.Item.ItemType == ItemObject.ItemTypeEnum.HorseHarness)
+            {
+                var dummyHorse = EquipmentElement.Invalid;
+                lines.Add(string.Concat("Mount Speed:  ", selectedItem.GetModifiedMountSpeed(dummyHorse).ToString(), " \u2192 ", after.GetModifiedMountSpeed(dummyHorse).ToString()));
+                lines.Add(string.Concat("Maneuver:     ", selectedItem.GetModifiedMountManeuver(dummyHorse).ToString(), " \u2192 ", after.GetModifiedMountManeuver(dummyHorse).ToString()));
+                lines.Add(string.Concat("Charge:       ", selectedItem.GetModifiedMountCharge(dummyHorse).ToString(), " \u2192 ", after.GetModifiedMountCharge(dummyHorse).ToString()));
+                lines.Add(string.Concat("Hit Points:   ", selectedItem.GetModifiedMountHitPoints().ToString(), " \u2192 ", after.GetModifiedMountHitPoints().ToString()));
+            }
+            else
+            {
+                return "No stat changes.";
+            }
+
+            return string.Join("\n", lines);
+        }
+
+        /// <summary>
+        /// Shows a list of active (in-progress) orders for the current town.
+        /// Each order shows the item name, quality, and remaining days.
+        /// Player can select an order to cancel it, or choose "New Order" to proceed.
+        /// </summary>
+        private static void ShowActiveOrders(Town town, List<SmithingOrder> orders)
+        {
+            var inquiryElements = new List<InquiryElement>();
+            foreach (var order in orders)
+            {
+                EquipmentElement originalItem = order.GetOriginalItem();
+                TextObject orderText = new TextObject("{=MS_ACTIVE_ORDER}{QUALITY} {ITEM} — {DAYS} days remaining", null);
+                orderText.SetTextVariable("QUALITY", order.RequestedQuality.ToString());
+                orderText.SetTextVariable("ITEM", originalItem.Item.Name.ToString());
+                orderText.SetTextVariable("DAYS", order.DaysRemaining);
+                inquiryElements.Add(new InquiryElement(order, orderText.ToString(), null));
+            }
+
+            inquiryElements.Add(new InquiryElement(null, new TextObject("{=MS_NEW_ORDER}New Order", null).ToString(), null));
+            inquiryElements.Add(new InquiryElement(null, new TextObject("{=MS_CLOSE}Close", null).ToString(), null));
+
+            MBInformationManager.ShowMultiSelectionInquiry(
+                new MultiSelectionInquiryData(
+                    titleText: new TextObject("{=MS_ACTIVE_ORDERS_TITLE}Active Orders", null).ToString(),
+                    descriptionText: new TextObject("{=MS_ACTIVE_ORDERS_DESC}Select an order to cancel, or place a new one.", null).ToString(),
+                    inquiryElements: inquiryElements,
+                    isExitShown: true,
+                    minSelectableOptionCount: 1,
+                    maxSelectableOptionCount: 1,
+                    affirmativeText: new TextObject("{=MS_SELECT}Select", null).ToString(),
+                    negativeText: new TextObject("{=MS_CLOSE}Close", null).ToString(),
+                    affirmativeAction: (selectedElements) =>
+                    {
+                        if (selectedElements.Count > 0 && selectedElements[0].Identifier is SmithingOrder selectedOrder)
+                        {
+                            ShowCancelConfirmation(town, selectedOrder);
+                        }
+                    },
+                    negativeAction: null
+                ));
+        }
+
+        /// <summary>
+        /// Shows a confirmation dialog before cancelling an order.
+        /// Displays the item name, remaining time, and refund amount.
+        /// </summary>
+        private static void ShowCancelConfirmation(Town town, SmithingOrder order)
+        {
+            var settings = MasterSmithSettings.Instance;
+            int refund = (int)(order.Price * settings.CancellationRefundMultiplier);
+            EquipmentElement originalItem = order.GetOriginalItem();
+
+            TextObject descText = new TextObject("{=MS_CANCEL_ORDER_DESC}Cancel this order?\n\n{QUALITY} {ITEM}\nTime remaining: {DAYS} days\nRefund: {REFUND} denars\n\nYou will receive the item back.", null);
+            descText.SetTextVariable("QUALITY", order.RequestedQuality.ToString());
+            descText.SetTextVariable("ITEM", originalItem.Item.Name.ToString());
+            descText.SetTextVariable("DAYS", order.DaysRemaining);
+            descText.SetTextVariable("REFUND", refund);
+
+            var inquiryElements = new List<InquiryElement>();
+            inquiryElements.Add(new InquiryElement(true, new TextObject("{=MS_CANCEL_YES}Yes, cancel and refund", null).ToString(), null));
+            inquiryElements.Add(new InquiryElement(false, new TextObject("{=MS_BACK}Back", null).ToString(), null));
+
+            MBInformationManager.ShowMultiSelectionInquiry(
+                new MultiSelectionInquiryData(
+                    titleText: new TextObject("{=MS_CANCEL_ORDER_TITLE}Cancel Order", null).ToString(),
+                    descriptionText: descText.ToString(),
+                    inquiryElements: inquiryElements,
+                    isExitShown: true,
+                    minSelectableOptionCount: 1,
+                    maxSelectableOptionCount: 1,
+                    affirmativeText: new TextObject("{=MS_CONFIRM}Confirm", null).ToString(),
+                    negativeText: new TextObject("{=MS_BACK}Back", null).ToString(),
+                    affirmativeAction: (selectedElements) =>
+                    {
+                        if (selectedElements.Count > 0 && (bool)selectedElements[0].Identifier)
+                        {
+                            CancelOrder(order, refund);
+                        }
+                    },
+                    negativeAction: (list) => ShowActiveOrders(town, MasterSmithData.ActiveOrders
+                        .Select(csv => SmithingOrder.FromCsv(csv))
+                        .Where(o => o != null && !o.IsReady && o.GetTown()?.Settlement == town.Settlement)
+                        .ToList())
+                ));
+        }
+
+        /// <summary>
+        /// Cancels an active order: returns the item to inventory, refunds a portion of the gold,
+        /// and removes the order from the active list.
+        /// </summary>
+        private static void CancelOrder(SmithingOrder order, int refund)
+        {
+            EquipmentElement originalItem = order.GetOriginalItem();
+            MobileParty.MainParty.ItemRoster.AddToCounts(originalItem, 1);
+            Hero.MainHero.Gold += refund;
+
+            int index = MasterSmithData.ActiveOrders.FindIndex(csv => csv.StartsWith(order.OrderId + "|"));
+            if (index >= 0)
+                MasterSmithData.ActiveOrders.RemoveAt(index);
+
+            TextObject msg = new TextObject("{=MS_ORDER_CANCELLED}[MasterSmith] Order cancelled. {ITEM} returned, {REFUND} denars refunded.", null);
+            msg.SetTextVariable("ITEM", originalItem.Item.Name.ToString());
+            msg.SetTextVariable("REFUND", refund);
+            InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFF00FF00)));
         }
     }
 }
