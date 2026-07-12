@@ -141,6 +141,15 @@ namespace MasterSmith
         [SettingPropertyGroup("General", GroupOrder = 4)]
         public bool UseSpecificCities { get; set; } = true;
 
+        /// <summary>
+        /// When ON, Legendary quality upgrades require the item's culture to match the town's master smith culture.
+        /// When OFF, any culture can be upgraded to Legendary at any master smith.
+        /// Default: true
+        /// </summary>
+        [SettingPropertyBool("Enable Culture Restriction", Order = 18, RequireRestart = false, HintText = "When ON, Legendary quality requires matching item and town culture. When OFF, any culture can reach Legendary at any master smith.")]
+        [SettingPropertyGroup("General", GroupOrder = 4)]
+        public bool EnableCultureRestriction { get; set; } = true;
+
         // ========================================
         // RUSH ORDER SETTINGS (Group 5)
         // ========================================
@@ -150,12 +159,12 @@ namespace MasterSmith
         /// When OFF, only standard orders are available.
         /// Default: true
         /// </summary>
-        [SettingPropertyBool("Enable Rush Orders", Order = 18, RequireRestart = false, HintText = "When ON, players can pay extra to halve the crafting time. When OFF, only standard orders are available.")]
+        [SettingPropertyBool("Enable Rush Orders", Order = 19, RequireRestart = false, HintText = "When ON, players can pay extra to halve the crafting time. When OFF, only standard orders are available.")]
         [SettingPropertyGroup("Rush Orders", GroupOrder = 5)]
         public bool EnableRushOrders { get; set; } = true;
 
         /// <summary>Price multiplier for rush orders. 1.5 = 150% of standard price. Default: 1.5, Range: 1.0–5.0</summary>
-        [SettingPropertyFloatingInteger("Rush Order Price Multiplier", 1.0f, 5.0f, "0.0", Order = 19, RequireRestart = false, HintText = "Price multiplier for rush orders. 1.5 = 150% of standard price.")]
+        [SettingPropertyFloatingInteger("Rush Order Price Multiplier", 1.0f, 5.0f, "0.0", Order = 20, RequireRestart = false, HintText = "Price multiplier for rush orders. 1.5 = 150% of standard price.")]
         [SettingPropertyGroup("Rush Orders", GroupOrder = 5)]
         public float RushOrderPriceMultiplier { get; set; } = 1.5f;
 
@@ -168,13 +177,26 @@ namespace MasterSmith
         /// When OFF, orders cannot be cancelled.
         /// Default: true
         /// </summary>
-        [SettingPropertyBool("Enable Order Cancellation", Order = 20, RequireRestart = false, HintText = "When ON, players can cancel in-progress orders and receive a partial refund. When OFF, orders cannot be cancelled.")]
+        [SettingPropertyBool("Enable Order Cancellation", Order = 21, RequireRestart = false, HintText = "When ON, players can cancel in-progress orders and receive a partial refund. When OFF, orders cannot be cancelled.")]
         [SettingPropertyGroup("Cancellation", GroupOrder = 6)]
         public bool EnableOrderCancellation { get; set; } = true;
 
         /// <summary>Refund multiplier for cancelled orders. 0.5 = 50% refund. Default: 0.5, Range: 0.0–1.0</summary>
-        [SettingPropertyFloatingInteger("Cancellation Refund Multiplier", 0.0f, 1.0f, "0.00", Order = 21, RequireRestart = false, HintText = "Percentage of the order price refunded on cancellation. 0.5 = 50%, 1.0 = full refund.")]
+        [SettingPropertyFloatingInteger("Cancellation Refund Multiplier", 0.0f, 1.0f, "0.00", Order = 22, RequireRestart = false, HintText = "Percentage of the order price refunded on cancellation. 0.5 = 50%, 1.0 = full refund.")]
         [SettingPropertyGroup("Cancellation", GroupOrder = 6)]
         public float CancellationRefundMultiplier { get; set; } = 0.5f;
+
+        // ========================================
+        // BULK ORDER SETTINGS (Group 7)
+        // ========================================
+
+        /// <summary>
+        /// When ON, players can upgrade multiple items at once (Bulk Order).
+        /// When OFF, only single item orders are available.
+        /// Default: true
+        /// </summary>
+        [SettingPropertyBool("Enable Bulk Orders", Order = 23, RequireRestart = false, HintText = "When ON, players can upgrade multiple items at once. When OFF, only single item orders are available.")]
+        [SettingPropertyGroup("Bulk Orders", GroupOrder = 7)]
+        public bool EnableBulkOrders { get; set; } = true;
     }
 }
