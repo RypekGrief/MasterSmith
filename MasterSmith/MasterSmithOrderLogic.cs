@@ -47,23 +47,25 @@ namespace MasterSmith
 
         /// <summary>
         /// Starts the order flow. Called by CTRL+H.
+        /// If Bulk Orders are enabled, shows a menu with Single/Bulk options and active orders.
         /// If the player has active in-progress orders in this town, shows the active orders list first.
         /// Otherwise proceeds directly to item selection.
         /// </summary>
         public static void StartOrder(Town town)
         {
-            if (MasterSmithSettings.Instance.EnableOrderCancellation)
-            {
-                var townOrders = MasterSmithData.ActiveOrders
+            var settings = MasterSmithSettings.Instance;
+
+            var townOrders = settings.EnableOrderCancellation
+                ? MasterSmithData.ActiveOrders
                     .Select(csv => SmithingOrder.FromCsv(csv))
                     .Where(o => o != null && !o.IsReady && o.GetTown()?.Settlement == town.Settlement)
-                    .ToList();
+                    .ToList()
+                : new List<SmithingOrder>();
 
-                if (townOrders.Count > 0)
-                {
-                    ShowActiveOrders(town, townOrders);
-                    return;
-                }
+            if (settings.EnableBulkOrders || townOrders.Count > 0)
+            {
+                ShowStartMenu(town, townOrders);
+                return;
             }
 
             var playerItems = GetEligibleItemsForSmithing(town);
@@ -74,6 +76,293 @@ namespace MasterSmith
                 return;
             }
             ShowItemSelection(town, playerItems);
+        }
+
+        /// <summary>
+        /// Shows the main start menu with Single Order, Bulk Order (if enabled), and active orders in this town.
+        /// This is the top-level menu shown when CTRL+H is pressed and there are multiple options available.
+        /// </summary>
+        private static void ShowStartMenu(Town town, List<SmithingOrder> townOrders)
+        {
+            var inquiryElements = new List<InquiryElement>();
+
+            inquiryElements.Add(new InquiryElement("single", new TextObject("{=MS_SINGLE_ORDER}Single Order", null).ToString(), null));
+
+            if (MasterSmithSettings.Instance.EnableBulkOrders)
+                inquiryElements.Add(new InquiryElement("bulk", new TextObject("{=MS_BULK_ORDER}Bulk Order", null).ToString(), null));
+
+            foreach (var order in townOrders)
+            {
+                EquipmentElement originalItem = order.GetOriginalItem();
+                TextObject orderText = new TextObject("{=MS_ACTIVE_ORDER}{QUALITY} {ITEM} — {DAYS} days remaining", null);
+                orderText.SetTextVariable("QUALITY", order.RequestedQuality.ToString());
+                orderText.SetTextVariable("ITEM", originalItem.Item.Name.ToString());
+                orderText.SetTextVariable("DAYS", order.DaysRemaining);
+                inquiryElements.Add(new InquiryElement(order, orderText.ToString(), null));
+            }
+
+            inquiryElements.Add(new InquiryElement("close", new TextObject("{=MS_CLOSE}Close", null).ToString(), null));
+
+            MBInformationManager.ShowMultiSelectionInquiry(
+                new MultiSelectionInquiryData(
+                    titleText: new TextObject("{=MS_START_MENU_TITLE}Master Smith", null).ToString(),
+                    descriptionText: new TextObject("{=MS_START_MENU_DESC}What would you like to do?", null).ToString(),
+                    inquiryElements: inquiryElements,
+                    isExitShown: true,
+                    minSelectableOptionCount: 1,
+                    maxSelectableOptionCount: 1,
+                    affirmativeText: new TextObject("{=MS_SELECT}Select", null).ToString(),
+                    negativeText: new TextObject("{=MS_CLOSE}Close", null).ToString(),
+                    affirmativeAction: (selectedElements) =>
+                    {
+                        if (selectedElements.Count == 0) return;
+                        var id = selectedElements[0].Identifier;
+
+                        if (id is string action)
+                        {
+                            if (action == "single")
+                            {
+                                var playerItems = GetEligibleItemsForSmithing(town);
+                                if (playerItems.Count == 0)
+                                {
+                                    TextObject msg = new TextObject("{=MS_NO_ITEMS}[MasterSmith] You don't have any upgradable items in your inventory.", null);
+                                    InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFFFF0000)));
+                                    return;
+                                }
+                                ShowItemSelection(town, playerItems);
+                            }
+                            else if (action == "bulk")
+                            {
+                                ShowBulkQualitySelection(town);
+                            }
+                        }
+                        else if (id is SmithingOrder selectedOrder)
+                        {
+                            ShowCancelConfirmation(town, selectedOrder);
+                        }
+                    },
+                    negativeAction: null
+                ));
+        }
+
+        /// <summary>
+        /// Checks whether the given equipment element can be upgraded to the specified quality.
+        /// Current quality must be lower than target, a compatible modifier must exist,
+        /// and for Legendary the culture restriction is checked (if enabled).
+        /// </summary>
+        private static bool IsViableForQuality(EquipmentElement element, Town town, ItemQuality target)
+        {
+            ItemQuality current = GetItemQuality(element);
+            if (current >= target) return false;
+
+            ItemModifier mod = GetItemModifierForQuality(element.Item, target);
+            if (mod == null) return false;
+
+            if (target == ItemQuality.Legendary && MasterSmithSettings.Instance.EnableCultureRestriction)
+            {
+                CultureObject smithCulture = MasterSmithData.GetSmithCulture(town);
+                CultureObject itemCulture = element.Item.Culture as CultureObject;
+                if (smithCulture != null && itemCulture != null
+                    && smithCulture.StringId != itemCulture.StringId)
+                    return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Bulk order step 1: Select the target quality for all items.
+        /// Shows Fine, Masterwork, and Legendary options (if any items can reach them).
+        /// </summary>
+        private static void ShowBulkQualitySelection(Town town)
+        {
+            var settings = MasterSmithSettings.Instance;
+            var inquiryElements = new List<InquiryElement>();
+
+            var playerItems = GetEligibleItemsForSmithing(town);
+            bool hasFine = playerItems.Any(e => IsViableForQuality(e, town, ItemQuality.Fine));
+            bool hasMW = playerItems.Any(e => IsViableForQuality(e, town, ItemQuality.Masterwork));
+            bool hasLeg = playerItems.Any(e => IsViableForQuality(e, town, ItemQuality.Legendary));
+
+            if (hasFine)
+            {
+                TextObject fineText = new TextObject("{=MS_QUALITY_FINE}Fine ({DAYS} days)", null);
+                fineText.SetTextVariable("DAYS", (int)settings.FineCraftingDays);
+                inquiryElements.Add(new InquiryElement(ItemQuality.Fine, fineText.ToString(), null));
+            }
+            if (hasMW)
+            {
+                TextObject mwText = new TextObject("{=MS_QUALITY_MASTERWORK}Masterwork ({DAYS} days)", null);
+                mwText.SetTextVariable("DAYS", (int)settings.MasterworkCraftingDays);
+                inquiryElements.Add(new InquiryElement(ItemQuality.Masterwork, mwText.ToString(), null));
+            }
+            if (hasLeg)
+            {
+                TextObject legText = new TextObject("{=MS_QUALITY_LEGENDARY}Legendary ({DAYS} days)", null);
+                legText.SetTextVariable("DAYS", (int)settings.LegendaryCraftingDays);
+                inquiryElements.Add(new InquiryElement(ItemQuality.Legendary, legText.ToString(), null));
+            }
+
+            if (inquiryElements.Count == 0)
+            {
+                TextObject msg = new TextObject("{=MS_NO_QUALITY}[MasterSmith] No quality upgrades available for any item.", null);
+                InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFFFF0000)));
+                return;
+            }
+
+            inquiryElements.Add(new InquiryElement(null, new TextObject("{=MS_CANCEL}Cancel", null).ToString(), null));
+
+            MBInformationManager.ShowMultiSelectionInquiry(
+                new MultiSelectionInquiryData(
+                    titleText: new TextObject("{=MS_BULK_QUALITY_TITLE}Bulk Order — Select Quality", null).ToString(),
+                    descriptionText: new TextObject("{=MS_BULK_QUALITY_DESC}Choose the desired quality level for all items.", null).ToString(),
+                    inquiryElements: inquiryElements,
+                    isExitShown: true,
+                    minSelectableOptionCount: 1,
+                    maxSelectableOptionCount: 1,
+                    affirmativeText: new TextObject("{=MS_SELECT}Select", null).ToString(),
+                    negativeText: new TextObject("{=MS_CANCEL}Cancel", null).ToString(),
+                    affirmativeAction: (selectedQualities) =>
+                    {
+                        if (selectedQualities.Count > 0 && selectedQualities[0].Identifier is ItemQuality quality)
+                        {
+                            ShowBulkItemSelection(town, quality);
+                        }
+                    },
+                    negativeAction: null
+                ));
+        }
+
+        /// <summary>
+        /// Bulk order step 2: Multi-select eligible items for the chosen quality.
+        /// Items that cannot reach the target quality are excluded.
+        /// </summary>
+        private static void ShowBulkItemSelection(Town town, ItemQuality targetQuality)
+        {
+            var playerItems = GetEligibleItemsForSmithing(town)
+                .Where(e => IsViableForQuality(e, town, targetQuality))
+                .ToList();
+
+            if (playerItems.Count == 0)
+            {
+                TextObject msg = new TextObject("{=MS_BULK_NO_ITEMS}[MasterSmith] No items can be upgraded to {QUALITY}.", null);
+                msg.SetTextVariable("QUALITY", targetQuality.ToString());
+                InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFFFF0000)));
+                return;
+            }
+
+            var inquiryElements = new List<InquiryElement>();
+            foreach (var element in playerItems)
+            {
+                string itemName = element.Item.Name.ToString();
+                string qualityText = GetQualityText(element);
+                int price = CalculatePrice(town, element, targetQuality);
+                inquiryElements.Add(new InquiryElement(element, $"{itemName} ({qualityText}) — {price} denars", null));
+            }
+
+            MBInformationManager.ShowMultiSelectionInquiry(
+                new MultiSelectionInquiryData(
+                    titleText: new TextObject("{=MS_BULK_SELECT_TITLE}Select Items", null).ToString(),
+                    descriptionText: new TextObject("{=MS_BULK_SELECT_DESC}Select items to upgrade. You must be able to afford the total.", null).ToString(),
+                    inquiryElements: inquiryElements,
+                    isExitShown: true,
+                    minSelectableOptionCount: 1,
+                    maxSelectableOptionCount: playerItems.Count,
+                    affirmativeText: new TextObject("{=MS_CALCULATE_PRICE}Next", null).ToString(),
+                    negativeText: new TextObject("{=MS_BACK}Back", null).ToString(),
+                    affirmativeAction: (selectedElements) =>
+                    {
+                        if (selectedElements.Count > 0)
+                        {
+                            var selected = selectedElements
+                                .Select(e => (EquipmentElement)e.Identifier)
+                                .ToList();
+                            ShowBulkPriceConfirmation(town, selected, targetQuality);
+                        }
+                    },
+                    negativeAction: (list) => ShowBulkQualitySelection(town)
+                ));
+        }
+
+        /// <summary>
+        /// Bulk order step 3: Price confirmation for all selected items.
+        /// Shows total price and duration, offers Standard/Rush options.
+        /// </summary>
+        private static void ShowBulkPriceConfirmation(Town town, List<EquipmentElement> selectedItems, ItemQuality targetQuality)
+        {
+            var settings = MasterSmithSettings.Instance;
+            int standardDays = GetCraftingDays(targetQuality);
+            int totalPrice = selectedItems.Sum(e => CalculatePrice(town, e, targetQuality));
+
+            int rushDays = Math.Max(1, standardDays / 2);
+            int rushTotal = (int)(totalPrice * settings.RushOrderPriceMultiplier);
+
+            TextObject descText = new TextObject("{=MS_BULK_CONFIRM_DESC}Upgrade {COUNT} items to {QUALITY}.\n\nDuration: {DAYS} days\nTotal Price: {PRICE} denars", null);
+            descText.SetTextVariable("COUNT", selectedItems.Count);
+            descText.SetTextVariable("QUALITY", targetQuality.ToString());
+            descText.SetTextVariable("DAYS", standardDays);
+            descText.SetTextVariable("PRICE", totalPrice);
+
+            var inquiryElements = new List<InquiryElement>();
+            bool canAffordStd = Hero.MainHero.Gold >= totalPrice;
+            bool canAffordRush = settings.EnableRushOrders && Hero.MainHero.Gold >= rushTotal;
+
+            if (canAffordStd)
+            {
+                TextObject stdText = new TextObject("{=MS_RUSH_STANDARD}Standard — {RUSH_DAYS}d, {RUSH_PRICE} denars", null);
+                stdText.SetTextVariable("RUSH_DAYS", standardDays);
+                stdText.SetTextVariable("RUSH_PRICE", totalPrice);
+                inquiryElements.Add(new InquiryElement(0, stdText.ToString(), null));
+            }
+            else
+            {
+                TextObject poorText = new TextObject("{=MS_NOT_ENOUGH_GOLD}Not enough gold! (Need {PRICE})", null);
+                poorText.SetTextVariable("PRICE", totalPrice);
+                inquiryElements.Add(new InquiryElement(-1, poorText.ToString(), null));
+            }
+
+            if (settings.EnableRushOrders)
+            {
+                if (canAffordRush)
+                {
+                    TextObject rushText = new TextObject("{=MS_RUSH_ORDER}Rush — {RUSH_DAYS}d, {RUSH_PRICE} denars", null);
+                    rushText.SetTextVariable("RUSH_DAYS", rushDays);
+                    rushText.SetTextVariable("RUSH_PRICE", rushTotal);
+                    inquiryElements.Add(new InquiryElement(1, rushText.ToString(), null));
+                }
+                else
+                {
+                    TextObject poorText = new TextObject("{=MS_NOT_ENOUGH_GOLD}Not enough gold! (Need {PRICE})", null);
+                    poorText.SetTextVariable("PRICE", rushTotal);
+                    inquiryElements.Add(new InquiryElement(-1, poorText.ToString(), null));
+                }
+            }
+
+            inquiryElements.Add(new InquiryElement(-1, new TextObject("{=MS_CANCEL}Cancel", null).ToString(), null));
+
+            MBInformationManager.ShowMultiSelectionInquiry(
+                new MultiSelectionInquiryData(
+                    titleText: new TextObject("{=MS_BULK_CONFIRM_TITLE}Confirm Bulk Order", null).ToString(),
+                    descriptionText: descText.ToString(),
+                    inquiryElements: inquiryElements,
+                    isExitShown: true,
+                    minSelectableOptionCount: 1,
+                    maxSelectableOptionCount: 1,
+                    affirmativeText: new TextObject("{=MS_CONFIRM}Confirm", null).ToString(),
+                    negativeText: new TextObject("{=MS_BACK}Back", null).ToString(),
+                    affirmativeAction: (selectedOptions) =>
+                    {
+                        if (selectedOptions.Count > 0)
+                        {
+                            int choice = (int)selectedOptions[0].Identifier;
+                            if (choice < 0) return;
+                            int finalPrice = choice == 1 ? rushTotal : totalPrice;
+                            int finalDays  = choice == 1 ? rushDays  : standardDays;
+                            foreach (var item in selectedItems)
+                                FinalizeOrder(town, item, targetQuality, CalculatePrice(town, item, targetQuality), finalDays);
+                        }
+                    },
+                    negativeAction: (list) => ShowBulkItemSelection(town, targetQuality)
+                ));
         }
 
         /// <summary>
@@ -121,6 +410,9 @@ namespace MasterSmith
             if (current < ItemQuality.Legendary
                 && GetItemModifierForQuality(element.Item, ItemQuality.Legendary) != null)
             {
+                if (!MasterSmithSettings.Instance.EnableCultureRestriction)
+                    return true;
+
                 CultureObject smithCulture = MasterSmithData.GetSmithCulture(town);
                 CultureObject itemCulture = element.Item.Culture as CultureObject;
                 if (!(smithCulture != null && itemCulture != null
@@ -184,10 +476,13 @@ namespace MasterSmith
 
             if (canBeLegendary)
             {
-                CultureObject smithCulture = MasterSmithData.GetSmithCulture(town);
-                CultureObject itemCulture = selectedItem.Item.Culture as CultureObject;
-                if (smithCulture != null && itemCulture != null && smithCulture.StringId != itemCulture.StringId)
-                    canBeLegendary = false;
+                if (settings.EnableCultureRestriction)
+                {
+                    CultureObject smithCulture = MasterSmithData.GetSmithCulture(town);
+                    CultureObject itemCulture = selectedItem.Item.Culture as CultureObject;
+                    if (smithCulture != null && itemCulture != null && smithCulture.StringId != itemCulture.StringId)
+                        canBeLegendary = false;
+                }
             }
 
             ItemQuality currentQuality = GetItemQuality(selectedItem);

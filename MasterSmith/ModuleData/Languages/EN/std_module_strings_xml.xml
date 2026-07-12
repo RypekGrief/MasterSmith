@@ -63,5 +63,21 @@ Refund: {REFUND} denars
 You will receive the item back." />
 		<string id="MS_CANCEL_YES" text="Yes, cancel and refund" />
 		<string id="MS_ORDER_CANCELLED" text="[MasterSmith] Order cancelled. {ITEM} returned, {REFUND} denars refunded." />
+
+		<!-- Bulk order -->
+		<string id="MS_START_MENU_TITLE" text="Master Smith" />
+		<string id="MS_START_MENU_DESC" text="What would you like to do?" />
+		<string id="MS_SINGLE_ORDER" text="Single Order" />
+		<string id="MS_BULK_ORDER" text="Bulk Order" />
+		<string id="MS_BULK_QUALITY_TITLE" text="Bulk Order — Select Quality" />
+		<string id="MS_BULK_QUALITY_DESC" text="Choose the desired quality level for all items." />
+		<string id="MS_BULK_SELECT_TITLE" text="Select Items" />
+		<string id="MS_BULK_SELECT_DESC" text="Select items to upgrade. You must be able to afford the total." />
+		<string id="MS_BULK_CONFIRM_TITLE" text="Confirm Bulk Order" />
+		<string id="MS_BULK_CONFIRM_DESC" text="Upgrade {COUNT} items to {QUALITY}.
+
+Duration: {DAYS} days
+Total Price: {PRICE} denars" />
+		<string id="MS_BULK_NO_ITEMS" text="[MasterSmith] No items can be upgraded to {QUALITY}." />
 	</strings>
 </base>
