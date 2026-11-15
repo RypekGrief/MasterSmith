@@ -64,6 +64,11 @@ You will receive the item back." />
 		<string id="MS_CANCEL_YES" text="Yes, cancel and refund" />
 		<string id="MS_ORDER_CANCELLED" text="[MasterSmith] Order cancelled. {ITEM} returned, {REFUND} denars refunded." />
 
+		<!-- Orphaned and failed order safety messages -->
+		<string id="MS_ORDER_PURGED" text="[MasterSmith] {COUNT} invalid order(s) cancelled. {REFUND} denars refunded." />
+		<string id="MS_ORDER_FAILED" text="[MasterSmith] Order could not be placed. Please try again." />
+		<string id="MS_ORDER_ITEM_MISSING" text="[MasterSmith] An order's item is no longer available. It was cancelled and {REFUND} denars refunded." />
+
 		<!-- Bulk order -->
 		<string id="MS_START_MENU_TITLE" text="Master Smith" />
 		<string id="MS_START_MENU_DESC" text="What would you like to do?" />

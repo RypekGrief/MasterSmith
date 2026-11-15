@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Party;
@@ -46,9 +47,12 @@ namespace MasterSmith
 
         /// <summary>
         /// Shows a usage hint when a game is loaded (new game or save).
+        /// Also purges orphaned orders left behind by removed item or map mods.
         /// </summary>
         private void OnGameLoaded(CampaignGameStarter campaignGameStarter)
         {
+            MasterSmithOrderLogic.PurgeOrphanedOrders();
+
             TextObject msg = new TextObject("{=MS_LOADED}[MasterSmith] Mod loaded. Press CTRL + H at the smithy to open the master smith order menu.", null);
             InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFF00FF00)));
         }
@@ -56,16 +60,18 @@ namespace MasterSmith
         /// <summary>
         /// Called when the player enters a settlement.
         /// Only triggers for the main hero and only for town/castle settlements.
-        /// Auto-delivers any ready orders for that city.
+        /// Purges orphaned orders first, then auto-delivers any ready orders for that city.
         /// </summary>
         private void OnSettlementEntered(MobileParty party, Settlement settlement, Hero hero)
         {
             if (hero != Hero.MainHero) return;
             if (!settlement.IsTown && !settlement.IsFortification) return;
 
+            MasterSmithOrderLogic.PurgeOrphanedOrders();
+
             var readyOrders = MasterSmithData.ActiveOrders
                 .Select(csv => SmithingOrder.FromCsv(csv))
-                .Where(o => o != null && o.IsReady && o.GetTown()?.Settlement == settlement)
+                .Where(o => o != null && o.IsReady && !MasterSmithOrderLogic.IsOrderOrphaned(o) && o.GetTown()?.Settlement == settlement)
                 .ToList();
 
             foreach (var order in readyOrders)
@@ -87,7 +93,7 @@ namespace MasterSmith
                 {
                     string settlementId = kvp.Key;
                     Town town = Town.AllTowns.FirstOrDefault(t => t.Settlement.StringId == settlementId);
-                    if (town == null) continue;
+                    if (town?.Settlement == null) continue;
 
                     var combined = new List<int>(6);
                     combined.Add(MBRandom.RandomInt((int)settings.FineWeaponMinPrice, (int)settings.FineWeaponMaxPrice + 1));
@@ -104,6 +110,7 @@ namespace MasterSmith
                 foreach (var town in Town.AllTowns)
                 {
                     if (!town.IsTown) continue;
+                    if (town.Settlement == null) continue;
 
                     var combined = new List<int>(6);
                     combined.Add(MBRandom.RandomInt((int)settings.FineWeaponMinPrice, (int)settings.FineWeaponMaxPrice + 1));
@@ -118,13 +125,16 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Daily tick: Decrements remaining days on all active orders by 1.
+        /// Daily tick: purges orphaned orders, then decrements remaining days on all active orders by 1.
         /// Marks orders as ready when DaysRemaining reaches 0.
         /// If an order is delivered (player in town), it is removed from the list and NOT updated.
         /// If an order is not delivered (player away), its CSV string is updated in place.
+        /// Each order is processed inside a quarantine block so one faulty entry can never crash the tick.
         /// </summary>
         private void OnDailyTick()
         {
+            MasterSmithOrderLogic.PurgeOrphanedOrders();
+
             // Only process orders that are not yet ready
             var orders = MasterSmithData.ActiveOrders
                 .Select(csv => SmithingOrder.FromCsv(csv))
@@ -134,25 +144,33 @@ namespace MasterSmith
             for (int i = 0; i < orders.Count; i++)
             {
                 var order = orders[i];
-                order.DaysRemaining -= 1;
-                if (order.DaysRemaining <= 0)
+
+                try
                 {
-                    order.IsReady = true;
-                    bool delivered = NotifyOrderReady(order);
-                    if (!delivered)
+                    order.DaysRemaining -= 1;
+                    if (order.DaysRemaining <= 0)
                     {
-                        // Order was not delivered, update CSV in ActiveOrders
-                        int index = MasterSmithData.ActiveOrders.FindIndex(csv => csv.StartsWith(order.OrderId + "|"));
+                        order.IsReady = true;
+                        bool delivered = NotifyOrderReady(order);
+                        if (!delivered)
+                        {
+                            // Order was not delivered, update CSV in ActiveOrders
+                            int index = MasterSmithData.ActiveOrders.FindIndex(csv => csv != null && csv.StartsWith(order.OrderId + "|"));
+                            if (index >= 0)
+                                MasterSmithData.ActiveOrders[index] = order.ToCsv();
+                        }
+                    }
+                    else
+                    {
+                        // Still in progress, update CSV
+                        int index = MasterSmithData.ActiveOrders.FindIndex(csv => csv != null && csv.StartsWith(order.OrderId + "|"));
                         if (index >= 0)
                             MasterSmithData.ActiveOrders[index] = order.ToCsv();
                     }
                 }
-                else
+                catch
                 {
-                    // Still in progress, update CSV
-                    int index = MasterSmithData.ActiveOrders.FindIndex(csv => csv.StartsWith(order.OrderId + "|"));
-                    if (index >= 0)
-                        MasterSmithData.ActiveOrders[index] = order.ToCsv();
+                    MasterSmithOrderLogic.RemoveOrderForQuarantine(order);
                 }
             }
         }
@@ -160,26 +178,28 @@ namespace MasterSmith
         /// <summary>
         /// Sends a notification when an order is ready.
         /// If the player is currently in the city, delivers immediately.
-        /// Returns true if delivered, false otherwise.
+        /// Returns true only when the order was delivered; returns false safely when
+        /// the order, the main hero, the town, or the item reference is missing.
         /// </summary>
         private bool NotifyOrderReady(SmithingOrder order)
         {
+            if (order == null || Hero.MainHero == null) return false;
+
             Town town = order.GetTown();
-            if (town != null && Hero.MainHero.CurrentSettlement == town.Settlement)
+            EquipmentElement originalItem = order.GetOriginalItem();
+            if (town == null || originalItem.IsEmpty || originalItem.Item == null) return false;
+
+            if (Hero.MainHero.CurrentSettlement == town.Settlement)
             {
                 DeliverOrder(order);
                 return true;
             }
-            else if (town != null)
-            {
-                EquipmentElement originalItem = order.GetOriginalItem();
-                TextObject msg = new TextObject("{=MS_READY}{QUALITY} {ITEM} is ready at {TOWN}'s Master Smith!", null);
-                msg.SetTextVariable("QUALITY", order.RequestedQuality.ToString());
-                msg.SetTextVariable("ITEM", originalItem.Item.Name.ToString());
-                msg.SetTextVariable("TOWN", town.Name.ToString());
-                InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0x00FF00)));
-                return false;
-            }
+
+            TextObject msg = new TextObject("{=MS_READY}{QUALITY} {ITEM} is ready at {TOWN}'s Master Smith!", null);
+            msg.SetTextVariable("QUALITY", order.RequestedQuality.ToString());
+            msg.SetTextVariable("ITEM", MasterSmithOrderLogic.GetOrderItemName(order));
+            msg.SetTextVariable("TOWN", town.Name?.ToString() ?? order.TownId);
+            InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0x00FF00)));
             return false;
         }
 
@@ -187,10 +207,21 @@ namespace MasterSmith
         /// Delivers the order: finds the matching ItemModifier, adds the upgraded item to inventory.
         /// If no modifier is found, returns the original item.
         /// Removes the delivered order from the active list.
+        /// Never adds an invalid EquipmentElement to the roster.
         /// </summary>
         private void DeliverOrder(SmithingOrder order)
         {
+            if (order == null) return;
+
             EquipmentElement originalItem = order.GetOriginalItem();
+            if (originalItem.IsEmpty || originalItem.Item == null || MobileParty.MainParty?.ItemRoster == null)
+            {
+                int orphanIndex = MasterSmithData.ActiveOrders.FindIndex(csv => csv != null && csv.StartsWith(order.OrderId + "|"));
+                if (orphanIndex >= 0)
+                    MasterSmithData.ActiveOrders.RemoveAt(orphanIndex);
+                return;
+            }
+
             ItemModifier modifier = MasterSmithOrderLogic.GetItemModifierForQuality(originalItem.Item, order.RequestedQuality);
             if (modifier != null)
             {
@@ -199,7 +230,7 @@ namespace MasterSmith
 
                 TextObject msg = new TextObject("{=MS_DELIVERED}{MODIFIER} {ITEM} has been delivered to your inventory.", null);
                 msg.SetTextVariable("MODIFIER", modifier.Name.ToString());
-                msg.SetTextVariable("ITEM", originalItem.Item.Name.ToString());
+                msg.SetTextVariable("ITEM", MasterSmithOrderLogic.GetOrderItemName(order));
                 InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0x00FF00)));
             }
             else
@@ -209,7 +240,7 @@ namespace MasterSmith
                 InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFFFF0000)));
             }
 
-            int index = MasterSmithData.ActiveOrders.FindIndex(csv => csv.StartsWith(order.OrderId + "|"));
+            int index = MasterSmithData.ActiveOrders.FindIndex(csv => csv != null && csv.StartsWith(order.OrderId + "|"));
             if (index >= 0)
                 MasterSmithData.ActiveOrders.RemoveAt(index);
         }
@@ -217,7 +248,7 @@ namespace MasterSmith
         /// <summary>
         /// Writes/reads prices and active orders to/from the save file.
         /// Both are string-based collections, ensuring problem-free serialization.
-        /// Null checks prevent crashes when loading saves without the mod.
+        /// Null and whitespace entries are stripped after loading to protect downstream parsers.
         /// </summary>
         public override void SyncData(IDataStore dataStore)
         {
@@ -233,6 +264,8 @@ namespace MasterSmith
                 MasterSmithData.CurrentPrices = new Dictionary<string, string>();
             if (MasterSmithData.ActiveOrders == null)
                 MasterSmithData.ActiveOrders = new List<string>();
+
+            MasterSmithData.ActiveOrders.RemoveAll(string.IsNullOrWhiteSpace);
         }
     }
 }

@@ -47,18 +47,20 @@ namespace MasterSmith
 
         /// <summary>
         /// Starts the order flow. Called by CTRL+H.
-        /// If Bulk Orders are enabled, shows a menu with Single/Bulk options and active orders.
-        /// If the player has active in-progress orders in this town, shows the active orders list first.
-        /// Otherwise proceeds directly to item selection.
+        /// Purges orphaned orders first, then shows the Single/Bulk start menu when needed.
+        /// Aborts safely when the town or its Settlement component is missing.
         /// </summary>
         public static void StartOrder(Town town)
         {
+            if (town?.Settlement == null) return;
+
             var settings = MasterSmithSettings.Instance;
+            PurgeOrphanedOrders();
 
             var townOrders = settings.EnableOrderCancellation
                 ? MasterSmithData.ActiveOrders
                     .Select(csv => SmithingOrder.FromCsv(csv))
-                    .Where(o => o != null && !o.IsReady && o.GetTown()?.Settlement == town.Settlement)
+                    .Where(o => o != null && !o.IsReady && !IsOrderOrphaned(o) && o.GetTown()?.Settlement == town.Settlement)
                     .ToList()
                 : new List<SmithingOrder>();
 
@@ -79,6 +81,119 @@ namespace MasterSmith
         }
 
         /// <summary>
+        /// Returns a safe display name for the order's item.
+        /// Falls back to the stored ItemId when the ItemObject can no longer be resolved.
+        /// </summary>
+        public static string GetOrderItemName(SmithingOrder order)
+        {
+            if (order == null) return "Unknown item";
+
+            EquipmentElement originalItem = order.GetOriginalItem();
+            string name = originalItem.Item?.Name?.ToString();
+            if (!string.IsNullOrEmpty(name)) return name;
+
+            return string.IsNullOrWhiteSpace(order.ItemId) ? "Unknown item" : order.ItemId;
+        }
+
+        /// <summary>
+        /// Returns true when the order cannot be completed because its town or item no longer exists.
+        /// </summary>
+        public static bool IsOrderOrphaned(SmithingOrder order)
+        {
+            if (order == null) return true;
+            if (order.GetTown() == null) return true;
+            return order.GetOriginalItem().IsEmpty;
+        }
+
+        /// <summary>
+        /// Removes malformed, duplicate, and orphaned orders from the active order list.
+        /// Malformed and duplicate entries are dropped without refund; valid orphaned orders
+        /// are removed first and fully refunded through a single consolidated message.
+        /// Returns the number of removed orders.
+        /// </summary>
+        public static int PurgeOrphanedOrders()
+        {
+            if (MasterSmithData.ActiveOrders == null)
+            {
+                MasterSmithData.ActiveOrders = new List<string>();
+                return 0;
+            }
+
+            var snapshot = new List<string>(MasterSmithData.ActiveOrders);
+            var seenOrderIds = new HashSet<string>();
+            int removedCount = 0;
+            int totalRefund = 0;
+
+            foreach (string csv in snapshot)
+            {
+                SmithingOrder order = SmithingOrder.FromCsv(csv);
+
+                if (order == null)
+                {
+                    if (MasterSmithData.ActiveOrders.Remove(csv)) removedCount++;
+                    continue;
+                }
+
+                if (!seenOrderIds.Add(order.OrderId))
+                {
+                    if (MasterSmithData.ActiveOrders.Remove(csv)) removedCount++;
+                    continue;
+                }
+
+                if (!IsOrderOrphaned(order)) continue;
+                if (Hero.MainHero == null) continue;
+
+                RemoveOrderById(order.OrderId);
+                totalRefund += Math.Max(0, order.Price);
+                removedCount++;
+            }
+
+            if (totalRefund > 0 && Hero.MainHero != null)
+                Hero.MainHero.Gold += totalRefund;
+
+            if (removedCount > 0)
+            {
+                TextObject msg = new TextObject("{=MS_ORDER_PURGED}[MasterSmith] {COUNT} invalid order(s) cancelled. {REFUND} denars refunded.", null);
+                msg.SetTextVariable("COUNT", removedCount);
+                msg.SetTextVariable("REFUND", totalRefund);
+                InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFFFF0000)));
+            }
+
+            return removedCount;
+        }
+
+        /// <summary>
+        /// Removes the first active order whose OrderId matches the given identifier.
+        /// </summary>
+        private static void RemoveOrderById(string orderId)
+        {
+            if (string.IsNullOrWhiteSpace(orderId)) return;
+
+            int index = MasterSmithData.ActiveOrders.FindIndex(csv => csv != null && csv.StartsWith(orderId + "|"));
+            if (index >= 0)
+                MasterSmithData.ActiveOrders.RemoveAt(index);
+        }
+
+        /// <summary>
+        /// Removes a faulty order during exception quarantine and refunds its full price when possible.
+        /// Used as a last-resort safety net so a single bad order can never break the campaign tick.
+        /// </summary>
+        public static void RemoveOrderForQuarantine(SmithingOrder order)
+        {
+            if (order == null) return;
+
+            RemoveOrderById(order.OrderId);
+
+            int refund = Math.Max(0, order.Price);
+            if (refund > 0 && Hero.MainHero != null)
+                Hero.MainHero.Gold += refund;
+
+            TextObject msg = new TextObject("{=MS_ORDER_ITEM_MISSING}[MasterSmith] An order's item is no longer available. It was cancelled and {REFUND} denars refunded.", null);
+            msg.SetTextVariable("REFUND", refund);
+            InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFFFF0000)));
+        }
+
+        /// <summary>
         /// Shows the main start menu with Single Order, Bulk Order (if enabled), and active orders in this town.
         /// This is the top-level menu shown when CTRL+H is pressed and there are multiple options available.
         /// </summary>
@@ -93,10 +208,10 @@ namespace MasterSmith
 
             foreach (var order in townOrders)
             {
-                EquipmentElement originalItem = order.GetOriginalItem();
+                if (IsOrderOrphaned(order)) continue;
                 TextObject orderText = new TextObject("{=MS_ACTIVE_ORDER}{QUALITY} {ITEM} — {DAYS} days remaining", null);
                 orderText.SetTextVariable("QUALITY", order.RequestedQuality.ToString());
-                orderText.SetTextVariable("ITEM", originalItem.Item.Name.ToString());
+                orderText.SetTextVariable("ITEM", GetOrderItemName(order));
                 orderText.SetTextVariable("DAYS", order.DaysRemaining);
                 inquiryElements.Add(new InquiryElement(order, orderText.ToString(), null));
             }
@@ -149,9 +264,12 @@ namespace MasterSmith
         /// Checks whether the given equipment element can be upgraded to the specified quality.
         /// Current quality must be lower than target, a compatible modifier must exist,
         /// and for Legendary the culture restriction is checked (if enabled).
+        /// Returns false safely when the item or town is missing.
         /// </summary>
         private static bool IsViableForQuality(EquipmentElement element, Town town, ItemQuality target)
         {
+            if (element.Item == null || town?.Settlement == null) return false;
+
             ItemQuality current = GetItemQuality(element);
             if (current >= target) return false;
 
@@ -175,6 +293,8 @@ namespace MasterSmith
         /// </summary>
         private static void ShowBulkQualitySelection(Town town)
         {
+            if (town?.Settlement == null) return;
+
             var settings = MasterSmithSettings.Instance;
             var inquiryElements = new List<InquiryElement>();
 
@@ -238,6 +358,8 @@ namespace MasterSmith
         /// </summary>
         private static void ShowBulkItemSelection(Town town, ItemQuality targetQuality)
         {
+            if (town?.Settlement == null) return;
+
             var playerItems = GetEligibleItemsForSmithing(town)
                 .Where(e => IsViableForQuality(e, town, targetQuality))
                 .ToList();
@@ -289,6 +411,8 @@ namespace MasterSmith
         /// </summary>
         private static void ShowBulkPriceConfirmation(Town town, List<EquipmentElement> selectedItems, ItemQuality targetQuality)
         {
+            if (town?.Settlement == null || selectedItems == null || selectedItems.Count == 0) return;
+
             var settings = MasterSmithSettings.Instance;
             int standardDays = GetCraftingDays(targetQuality);
             int totalPrice = selectedItems.Sum(e => CalculatePrice(town, e, targetQuality));
@@ -393,10 +517,12 @@ namespace MasterSmith
         /// <summary>
         /// Checks whether the given equipment element has any viable quality upgrade path.
         /// Considers the item's current quality, available ItemModifiers, and the town's culture for Legendary restriction.
-        /// Returns false if no higher quality modifier exists for this item.
+        /// Returns false safely when the item or town is missing.
         /// </summary>
         private static bool HasViableQualityUpgrade(EquipmentElement element, Town town)
         {
+            if (element.Item == null || town?.Settlement == null) return false;
+
             ItemQuality current = GetItemQuality(element);
 
             if (current < ItemQuality.Fine
@@ -429,6 +555,8 @@ namespace MasterSmith
         /// </summary>
         private static void ShowItemSelection(Town town, List<EquipmentElement> items)
         {
+            if (town?.Settlement == null || items == null || items.Count == 0) return;
+
             var inquiryElements = new List<InquiryElement>();
             foreach (var element in items)
             {
@@ -467,6 +595,8 @@ namespace MasterSmith
         /// </summary>
         private static void ShowQualitySelection(Town town, EquipmentElement selectedItem)
         {
+            if (town?.Settlement == null || selectedItem.Item == null) return;
+
             var settings = MasterSmithSettings.Instance;
             var inquiryElements = new List<InquiryElement>();
 
@@ -548,6 +678,8 @@ namespace MasterSmith
         /// </summary>
         private static void ShowPriceConfirmation(Town town, EquipmentElement selectedItem, ItemQuality selectedQuality)
         {
+            if (town?.Settlement == null || selectedItem.Item == null) return;
+
             var settings = MasterSmithSettings.Instance;
             int standardPrice = CalculatePrice(town, selectedItem, selectedQuality);
             int standardDays = GetCraftingDays(selectedQuality);
@@ -660,6 +792,8 @@ namespace MasterSmith
         /// </summary>
         private static int CalculatePrice(Town town, EquipmentElement selectedItem, ItemQuality selectedQuality)
         {
+            if (town?.Settlement == null || selectedItem.Item == null) return 1;
+
             var settings = MasterSmithSettings.Instance;
             string settlementId = town.Settlement.StringId;
 
@@ -761,6 +895,14 @@ namespace MasterSmith
         /// </summary>
         private static void FinalizeOrder(Town town, EquipmentElement selectedItem, ItemQuality selectedQuality, int price, int days)
         {
+            if (town?.Settlement == null || selectedItem.Item == null
+                || Hero.MainHero == null || MobileParty.MainParty?.ItemRoster == null)
+            {
+                TextObject failMsg = new TextObject("{=MS_ORDER_FAILED}[MasterSmith] Order could not be placed. Please try again.", null);
+                InformationManager.DisplayMessage(new InformationMessage(failMsg.ToString(), Color.FromUint(0xFFFF0000)));
+                return;
+            }
+
             GiveGoldAction.ApplyBetweenCharacters(Hero.MainHero, null, price, false);
             MobileParty.MainParty.ItemRoster.AddToCounts(selectedItem, -1);
 
@@ -776,9 +918,12 @@ namespace MasterSmith
         /// Finds the best matching ItemModifier for the given item and target quality.
         /// Searches by naming patterns (e.g. "fine_sword", "lordly_plate"), then falls back to a broader prefix match.
         /// All candidates are validated via IsModifierCompatibleWithItem before being returned.
+        /// Returns null when the item is null or no compatible modifier exists.
         /// </summary>
         public static ItemModifier GetItemModifierForQuality(ItemObject item, ItemQuality quality)
         {
+            if (item == null) return null;
+
             var allModifiers = MBObjectManager.Instance.GetObjectTypeList<ItemModifier>();
             string prefix = quality.ToString().ToLower();
             string itemTypeStr = GetItemTypeString(item);
@@ -991,10 +1136,10 @@ namespace MasterSmith
             var inquiryElements = new List<InquiryElement>();
             foreach (var order in orders)
             {
-                EquipmentElement originalItem = order.GetOriginalItem();
+                if (IsOrderOrphaned(order)) continue;
                 TextObject orderText = new TextObject("{=MS_ACTIVE_ORDER}{QUALITY} {ITEM} — {DAYS} days remaining", null);
                 orderText.SetTextVariable("QUALITY", order.RequestedQuality.ToString());
-                orderText.SetTextVariable("ITEM", originalItem.Item.Name.ToString());
+                orderText.SetTextVariable("ITEM", GetOrderItemName(order));
                 orderText.SetTextVariable("DAYS", order.DaysRemaining);
                 inquiryElements.Add(new InquiryElement(order, orderText.ToString(), null));
             }
@@ -1029,13 +1174,18 @@ namespace MasterSmith
         /// </summary>
         private static void ShowCancelConfirmation(Town town, SmithingOrder order)
         {
+            if (IsOrderOrphaned(order))
+            {
+                PurgeOrphanedOrders();
+                return;
+            }
+
             var settings = MasterSmithSettings.Instance;
             int refund = (int)(order.Price * settings.CancellationRefundMultiplier);
-            EquipmentElement originalItem = order.GetOriginalItem();
 
             TextObject descText = new TextObject("{=MS_CANCEL_ORDER_DESC}Cancel this order?\n\n{QUALITY} {ITEM}\nTime remaining: {DAYS} days\nRefund: {REFUND} denars\n\nYou will receive the item back.", null);
             descText.SetTextVariable("QUALITY", order.RequestedQuality.ToString());
-            descText.SetTextVariable("ITEM", originalItem.Item.Name.ToString());
+            descText.SetTextVariable("ITEM", GetOrderItemName(order));
             descText.SetTextVariable("DAYS", order.DaysRemaining);
             descText.SetTextVariable("REFUND", refund);
 
@@ -1068,21 +1218,24 @@ namespace MasterSmith
         }
 
         /// <summary>
-        /// Cancels an active order: returns the item to inventory, refunds a portion of the gold,
-        /// and removes the order from the active list.
+        /// Cancels an active order: returns the item to inventory when it still resolves, refunds a portion of the gold,
+        /// and removes the order from the active list. Never adds an invalid EquipmentElement to the roster.
         /// </summary>
         private static void CancelOrder(SmithingOrder order, int refund)
         {
-            EquipmentElement originalItem = order.GetOriginalItem();
-            MobileParty.MainParty.ItemRoster.AddToCounts(originalItem, 1);
-            Hero.MainHero.Gold += refund;
+            if (order == null) return;
 
-            int index = MasterSmithData.ActiveOrders.FindIndex(csv => csv.StartsWith(order.OrderId + "|"));
-            if (index >= 0)
-                MasterSmithData.ActiveOrders.RemoveAt(index);
+            EquipmentElement originalItem = order.GetOriginalItem();
+            if (MobileParty.MainParty?.ItemRoster != null && originalItem.Item != null && !originalItem.IsEmpty)
+                MobileParty.MainParty.ItemRoster.AddToCounts(originalItem, 1);
+
+            if (Hero.MainHero != null)
+                Hero.MainHero.Gold += refund;
+
+            RemoveOrderById(order.OrderId);
 
             TextObject msg = new TextObject("{=MS_ORDER_CANCELLED}[MasterSmith] Order cancelled. {ITEM} returned, {REFUND} denars refunded.", null);
-            msg.SetTextVariable("ITEM", originalItem.Item.Name.ToString());
+            msg.SetTextVariable("ITEM", GetOrderItemName(order));
             msg.SetTextVariable("REFUND", refund);
             InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFF00FF00)));
         }

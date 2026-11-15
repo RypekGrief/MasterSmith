@@ -27,6 +27,7 @@ namespace MasterSmith
         /// Harmony Postfix on GauntletCraftingScreen.OnFrameTick.
         /// Detects CTRL+H keypress and opens the Master Smith order menu.
         /// Validates that the player is in a town with a master smith before opening.
+        /// Any failure inside the order flow is caught so the shortcut is never permanently locked.
         /// </summary>
         static void Postfix()
         {
@@ -44,17 +45,28 @@ namespace MasterSmith
                 }
 
                 var town = currentSettlement.Town;
-                if (!MasterSmithData.IsMasterSmithCity(town))
+                if (town == null || !MasterSmithData.IsMasterSmithCity(town))
                 {
                     TextObject msg = new TextObject("{=MS_NO_SMITH}[MasterSmith] {TOWN_NAME} does not have a master smith.", null);
-                    msg.SetTextVariable("TOWN_NAME", town.Name.ToString());
+                    msg.SetTextVariable("TOWN_NAME", town?.Name?.ToString() ?? currentSettlement.Name?.ToString() ?? "This settlement");
                     InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFFFF0000)));
                     return;
                 }
 
                 _orderScreenOpen = true;
-                MasterSmithOrderLogic.StartOrder(town);
-                _orderScreenOpen = false;
+                try
+                {
+                    MasterSmithOrderLogic.StartOrder(town);
+                }
+                catch
+                {
+                    TextObject msg = new TextObject("{=MS_ORDER_FAILED}[MasterSmith] Order could not be placed. Please try again.", null);
+                    InformationManager.DisplayMessage(new InformationMessage(msg.ToString(), Color.FromUint(0xFFFF0000)));
+                }
+                finally
+                {
+                    _orderScreenOpen = false;
+                }
             }
         }
     }

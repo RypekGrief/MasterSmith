@@ -62,27 +62,37 @@ namespace MasterSmith
         /// Checks if the given town has a master smith.
         /// When UseSpecificCities is ON: checks the hardcoded vanilla city list.
         /// When OFF: any town qualifies (for modded maps / 1.3.15+ compatibility).
+        /// Null-safe when the town or its Settlement component is missing.
         /// </summary>
         public static bool IsMasterSmithCity(Town town)
         {
             if (town == null) return false;
+
+            string townId = town.Settlement?.StringId;
+            if (string.IsNullOrEmpty(townId)) return false;
+
             if (!MasterSmithSettings.Instance.UseSpecificCities)
                 return town.IsTown;
-            return SmithCities.ContainsKey(town.Settlement.StringId);
+
+            return SmithCities.ContainsKey(townId);
         }
 
         /// <summary>
         /// Returns the culture of the town's master smith.
         /// When UseSpecificCities is ON: looks up culture from the hardcoded list.
         /// When OFF: returns the town's actual settlement culture directly.
+        /// Returns null when the town or its Settlement component is missing.
         /// </summary>
         public static CultureObject GetSmithCulture(Town town)
         {
             if (town == null) return null;
+
+            string townId = town.Settlement?.StringId;
+            if (string.IsNullOrEmpty(townId)) return null;
+
             if (!MasterSmithSettings.Instance.UseSpecificCities)
                 return town.Settlement?.Culture;
 
-            string townId = town.Settlement.StringId;
             if (SmithCities.TryGetValue(townId, out string cultureId))
                 return MBObjectManager.Instance.GetObject<CultureObject>(cultureId);
             return null;
@@ -232,22 +242,38 @@ namespace MasterSmith
 
         /// <summary>
         /// Creates an order from a pipe-delimited CSV string.
+        /// Returns null when the input is null, whitespace, malformed, missing required IDs,
+        /// or contains non-integer numeric fields. Never throws on corrupted save data.
         /// </summary>
         public static SmithingOrder FromCsv(string csv)
         {
+            if (string.IsNullOrWhiteSpace(csv)) return null;
+
             var parts = csv.Split('|');
             if (parts.Length != 8) return null;
 
+            string orderId = parts[0];
+            string townId = parts[1];
+            string itemId = parts[2];
+            if (string.IsNullOrWhiteSpace(orderId)
+                || string.IsNullOrWhiteSpace(townId)
+                || string.IsNullOrWhiteSpace(itemId))
+                return null;
+
+            if (!int.TryParse(parts[4], out int price)) return null;
+            if (!int.TryParse(parts[5], out int daysRemaining)) return null;
+            if (!int.TryParse(parts[7], out int requestedQuality)) return null;
+
             return new SmithingOrder
             {
-                OrderId = parts[0],
-                TownId = parts[1],
-                ItemId = parts[2],
+                OrderId = orderId,
+                TownId = townId,
+                ItemId = itemId,
                 CurrentModifierId = string.IsNullOrEmpty(parts[3]) ? null : parts[3],
-                Price = int.Parse(parts[4]),
-                DaysRemaining = int.Parse(parts[5]),
+                Price = price,
+                DaysRemaining = daysRemaining,
                 IsReady = parts[6] == "1",
-                RequestedQualityInt = int.Parse(parts[7])
+                RequestedQualityInt = requestedQuality
             };
         }
     }
